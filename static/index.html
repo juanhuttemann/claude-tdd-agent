@@ -22,7 +22,7 @@
   .form-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
   .form-card.hidden { display: none; }
   label { display: block; font-size: 12px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
-  textarea { width: 100%; height: 100px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; font-family: inherit; font-size: 13px; resize: vertical; }
+  textarea { width: 100%; height: 450px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; font-family: inherit; font-size: 13px; resize: vertical; }
   textarea:focus, input:focus { outline: none; border-color: #58a6ff; }
   input[type="text"] { width: 100%; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-family: inherit; font-size: 13px; }
   .field + .field { margin-top: 14px; }
@@ -30,6 +30,10 @@
   button { background: #238636; color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }
   button:hover { background: #2ea043; }
   button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  button.secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+  button.secondary:hover { background: #30363d; }
+  .input-group { display: flex; gap: 8px; }
+  .input-group input { flex: 1; }
 
   /* Stepper */
   .stepper { display: flex; gap: 4px; margin-bottom: 20px; }
@@ -64,6 +68,31 @@
   .report-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-top: 8px; }
   .report-card h2 { font-size: 15px; color: #e6edf3; margin-bottom: 12px; }
   .report-body { font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word; color: #c9d1d9; font-family: 'SF Mono', 'Consolas', monospace; max-height: 500px; overflow-y: auto; }
+
+  /* Directory Browser Modal */
+  .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 1000; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #161b22; border: 1px solid #30363d; border-radius: 8px; width: 90%; max-width: 500px; max-height: 80vh; display: flex; flex-direction: column; }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid #30363d; display: flex; align-items: center; justify-content: space-between; }
+  .modal-title { font-size: 14px; font-weight: 600; color: #e6edf3; }
+  .modal-close { background: none; border: none; color: #8b949e; font-size: 20px; cursor: pointer; padding: 0; }
+  .modal-close:hover { color: #c9d1d9; }
+  .modal-body { padding: 0; overflow-y: auto; flex: 1; }
+  .dir-browser-header { padding: 12px 20px; border-bottom: 1px solid #30363d; font-size: 12px; color: #8b949e; }
+  .dir-browser-header span { color: #58a6ff; }
+  .dir-list { list-style: none; }
+  .dir-item { padding: 10px 20px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #c9d1d9; }
+  .dir-item:hover { background: #1c2129; }
+  .dir-item::before { content: '📁'; font-size: 14px; }
+  .dir-item.parent::before { content: '⬆️'; }
+  .dir-item.hidden { display: none; }
+  .dir-item .dir-name span.match { background: #1f3a2d; color: #3fb950; border-radius: 2px; padding: 1px 2px; font-weight: 600; }
+  .modal-footer { padding: 16px 20px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 10px; }
+  .quick-select { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .quick-select button { padding: 6px 12px; font-size: 12px; }
+  .search-bar { padding: 10px 20px; border-bottom: 1px solid #30363d; }
+  .search-input { width: 100%; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+  .search-input:focus { outline: none; border-color: #58a6ff; }
 </style>
 </head>
 <body>
@@ -80,7 +109,11 @@
     </div>
     <div class="field">
       <label>Target path</label>
-      <input type="text" id="target" value="/home/xh/testapp">
+      <div class="input-group">
+        <input type="text" id="target" placeholder="Loading..." disabled>
+        <button type="button" class="secondary" id="browse-btn" onclick="openDirBrowser()">Browse</button>
+      </div>
+      <div class="quick-select" id="quick-select"></div>
     </div>
     <div class="actions">
       <button id="run" onclick="startRun()">Run</button>
@@ -96,6 +129,25 @@
   </div>
 
   <div id="stages"></div>
+</div>
+
+<!-- Directory Browser Modal -->
+<div class="modal-overlay" id="dir-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Select Directory</span>
+      <button class="modal-close" onclick="closeDirBrowser()">&times;</button>
+    </div>
+    <div class="dir-browser-header">
+      Current: <span id="current-path">/</span>
+    </div>
+    <div class="search-bar">
+      <input type="text" class="search-input" id="dir-search" placeholder="Search directories..." oninput="filterDirectories()">
+    </div>
+    <div class="modal-body">
+      <ul class="dir-list" id="dir-list"></ul>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -289,8 +341,161 @@ async function startRun() {
   connectSSE();
 }
 
+let currentBrowsePath = null;
+let currentDirEntries = [];
+
+async function openDirBrowser() {
+  document.getElementById('dir-modal').classList.add('open');
+  document.getElementById('dir-search').value = '';
+  await loadDirectories(document.getElementById('target').value || '/');
+  document.getElementById('dir-search').focus();
+}
+
+function closeDirBrowser() {
+  document.getElementById('dir-modal').classList.remove('open');
+}
+
+// Fuzzy match function - returns score and match indices
+function fuzzyMatch(text, query) {
+  if (!query) return { score: 1, indices: [] };
+
+  text = text.toLowerCase();
+  query = query.toLowerCase();
+
+  let textIdx = 0;
+  let queryIdx = 0;
+  let score = 0;
+  let indices = [];
+
+  while (textIdx < text.length && queryIdx < query.length) {
+    if (text[textIdx] === query[queryIdx]) {
+      indices.push(textIdx);
+      score += textIdx === queryIdx ? 2 : 1; // Bonus for consecutive matches
+      queryIdx++;
+    }
+    textIdx++;
+  }
+
+  if (queryIdx < query.length) {
+    return null; // Not all query characters matched
+  }
+
+  // Normalize score by query length
+  return { score: score / query.length, indices };
+}
+
+function filterDirectories() {
+  const query = document.getElementById('dir-search').value.trim();
+  const dirList = document.getElementById('dir-list');
+  const items = dirList.querySelectorAll('.dir-item');
+
+  items.forEach(item => {
+    const name = item.dataset.name;
+    if (!query) {
+      item.classList.remove('hidden');
+      const nameSpan = item.querySelector('.dir-name');
+      if (nameSpan) {
+        nameSpan.textContent = name;
+        nameSpan.classList.remove('match');
+      }
+      return;
+    }
+
+    const result = fuzzyMatch(name, query);
+    if (result) {
+      item.classList.remove('hidden');
+      const nameSpan = item.querySelector('.dir-name');
+      if (nameSpan && result.indices.length > 0) {
+        // Highlight matched characters
+        let highlighted = '';
+        let lastIdx = 0;
+        result.indices.forEach(idx => {
+          highlighted += name.substring(lastIdx, idx);
+          highlighted += '<span class="match">' + name[idx] + '</span>';
+          lastIdx = idx + 1;
+        });
+        highlighted += name.substring(lastIdx);
+        nameSpan.innerHTML = highlighted;
+      }
+    } else {
+      item.classList.add('hidden');
+    }
+  });
+}
+
+async function loadDirectories(path) {
+  const dirList = document.getElementById('dir-list');
+  const currentPathEl = document.getElementById('current-path');
+
+  dirList.innerHTML = '<li class="dir-item">Loading...</li>';
+  currentPathEl.textContent = path;
+  document.getElementById('dir-search').value = '';
+
+  try {
+    const res = await fetch('/api/list_dirs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+
+    if (!res.ok) {
+      dirList.innerHTML = '<li class="dir-item" style="color: #f85149;">Error loading directories</li>';
+      return;
+    }
+
+    const data = await res.json();
+    currentBrowsePath = data.path;
+    currentPathEl.textContent = data.path;
+    currentDirEntries = data.entries;
+
+    dirList.innerHTML = '';
+    currentDirEntries.forEach(entry => {
+      const li = document.createElement('li');
+      li.className = 'dir-item' + (entry.name === '..' ? ' parent' : '');
+      li.dataset.name = entry.name;
+      li.innerHTML = '<span class="dir-name">' + entry.name + '</span>';
+      li.onclick = () => {
+        if (entry.name === '..') {
+          loadDirectories(entry.path);
+        } else {
+          document.getElementById('target').value = entry.path;
+          closeDirBrowser();
+        }
+      };
+      dirList.appendChild(li);
+    });
+  } catch (err) {
+    dirList.innerHTML = '<li class="dir-item" style="color: #f85149;">Error: ' + err.message + '</li>';
+  }
+}
+
+function setQuickPath(path) {
+  document.getElementById('target').value = path;
+}
+
 // On page load, check if there's a running or completed pipeline and reconnect
 (async function init() {
+  // Fetch config to get default target path
+  const configRes = await fetch('/api/config');
+  const config = await configRes.json();
+  const targetInput = document.getElementById('target');
+  targetInput.value = config.default_target;
+  targetInput.placeholder = 'Enter target path';
+  targetInput.disabled = false;
+
+  // Add quick-select buttons
+  const quickSelectEl = document.getElementById('quick-select');
+  if (config.common_dirs && config.common_dirs.length > 0) {
+    config.common_dirs.forEach(dir => {
+      const btn = document.createElement('button');
+      btn.className = 'secondary';
+      btn.textContent = dir.name;
+      btn.onclick = () => setQuickPath(dir.path);
+      quickSelectEl.appendChild(btn);
+    });
+  }
+
+  // Check if pipeline is running or done
   const res = await fetch('/api/status');
   const s = await res.json();
   if (s.status === 'running' || s.status === 'done') {

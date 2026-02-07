@@ -67,7 +67,7 @@ async def api_run(request: Request) -> JSONResponse:
 
     body = await request.json()
     ticket = body.get("ticket", "").strip()
-    target = body.get("target", "/home/xh/testapp").strip()
+    target = body.get("target", os.getcwd()).strip()
     if not ticket:
         return JSONResponse({"error": "ticket is required"}, status_code=400)
 
@@ -98,12 +98,55 @@ async def api_status(request: Request) -> JSONResponse:
     return JSONResponse(_status)
 
 
+async def api_config(request: Request) -> JSONResponse:
+    cwd = os.getcwd()
+    home = os.path.expanduser("~")
+    return JSONResponse({
+        "default_target": cwd,
+        "home": home,
+        "common_dirs": [
+            {"name": "Current", "path": cwd},
+            {"name": "Parent", "path": os.path.dirname(cwd)},
+            {"name": "Home", "path": home},
+        ]
+    })
+
+
+async def api_list_dirs(request: Request) -> JSONResponse:
+    """List directories at a given path (for directory browser)."""
+    body = await request.json()
+    path = body.get("path", os.getcwd())
+
+    # Security: only allow listing subdirectories, resolve absolute path
+    try:
+        path = os.path.abspath(path)
+        if not os.path.exists(path):
+            return JSONResponse({"error": "Path does not exist"}, status_code=404)
+
+        entries = []
+        # Add parent directory (if not at root)
+        parent = os.path.dirname(path)
+        if parent != path:
+            entries.append({"name": "..", "path": parent, "is_dir": True})
+
+        # List directories
+        for entry in os.scandir(path):
+            if entry.is_dir():
+                entries.append({"name": entry.name, "path": entry.path, "is_dir": True})
+
+        return JSONResponse({"path": path, "entries": entries})
+    except PermissionError:
+        return JSONResponse({"error": "Permission denied"}, status_code=403)
+
+
 app = Starlette(
     routes=[
         Route("/", homepage),
         Route("/api/run", api_run, methods=["POST"]),
         Route("/api/events", api_events),
         Route("/api/status", api_status),
+        Route("/api/config", api_config),
+        Route("/api/list_dirs", api_list_dirs, methods=["POST"]),
     ],
 )
 
