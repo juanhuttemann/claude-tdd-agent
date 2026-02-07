@@ -1,0 +1,1 @@
+The reviewer found issues. Based on the review feedback above, write new or updated tests that cover the problems identified. Run the tests with `{test_cmd}` and confirm the new tests FAIL (RED). Do not fix the implementation yet — only write/update tests.

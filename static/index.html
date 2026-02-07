@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TDD Agent</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f1117; color: #c9d1d9; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.5; }
+  .container { max-width: 720px; margin: 0 auto; padding: 32px 20px; }
+
+  /* Header */
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+  header h1 { font-size: 18px; font-weight: 600; color: #e6edf3; }
+  header .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; flex-shrink: 0; }
+  header .dot.idle { background: #484f58; }
+  header .dot.running { background: #3fb950; animation: pulse 1.5s infinite; }
+  header .dot.done { background: #3fb950; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+  /* Form */
+  .form-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .form-card.hidden { display: none; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  textarea { width: 100%; height: 100px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; font-family: inherit; font-size: 13px; resize: vertical; }
+  textarea:focus, input:focus { outline: none; border-color: #58a6ff; }
+  input[type="text"] { width: 100%; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-family: inherit; font-size: 13px; }
+  .field + .field { margin-top: 14px; }
+  .actions { margin-top: 16px; display: flex; gap: 10px; align-items: center; }
+  button { background: #238636; color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+
+  /* Stepper */
+  .stepper { display: flex; gap: 4px; margin-bottom: 20px; }
+  .step { flex: 1; text-align: center; padding: 8px 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #484f58; background: #161b22; border-radius: 6px; border: 1px solid #21262d; transition: all .3s; }
+  .step.active { color: #58a6ff; border-color: #58a6ff; background: #161b22; }
+  .step.done { color: #3fb950; border-color: #238636; background: #0d1117; }
+
+  /* Stage cards */
+  #stages { display: flex; flex-direction: column; gap: 8px; }
+  .stage-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+  .stage-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; cursor: pointer; user-select: none; }
+  .stage-header:hover { background: #1c2129; }
+  .stage-name { font-weight: 600; font-size: 13px; color: #e6edf3; }
+  .stage-meta { display: flex; gap: 12px; font-size: 11px; color: #8b949e; font-family: 'SF Mono', 'Consolas', monospace; }
+  .stage-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-running { background: #1f3a2d; color: #3fb950; }
+  .badge-done { background: #1c2129; color: #8b949e; }
+  .badge-tools { background: #1c2129; color: #8b949e; }
+  .stage-body { display: none; padding: 0 16px 14px; border-top: 1px solid #21262d; }
+  .stage-body.open { display: block; padding-top: 12px; }
+  .tool-list { list-style: none; font-size: 12px; color: #8b949e; font-family: 'SF Mono', 'Consolas', monospace; max-height: 160px; overflow-y: auto; }
+  .tool-list li { padding: 2px 0; }
+  .tool-list li::before { content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: #484f58; margin-right: 8px; vertical-align: middle; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Log messages */
+  .log-msg { padding: 8px 16px; font-size: 12px; color: #d29922; background: #1c1a10; border: 1px solid #30363d; border-radius: 8px; }
+  .error-msg { padding: 8px 16px; font-size: 12px; color: #f85149; background: #2a1215; border: 1px solid #5a1e23; border-radius: 8px; }
+
+  /* Report */
+  .report-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-top: 8px; }
+  .report-card h2 { font-size: 15px; color: #e6edf3; margin-bottom: 12px; }
+  .report-body { font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word; color: #c9d1d9; font-family: 'SF Mono', 'Consolas', monospace; max-height: 500px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="dot idle" id="indicator"></div>
+    <h1>TDD Agent</h1>
+  </header>
+
+  <div class="form-card" id="form-card">
+    <div class="field">
+      <label>Ticket</label>
+      <textarea id="ticket" placeholder="Describe the bug or feature..."></textarea>
+    </div>
+    <div class="field">
+      <label>Target path</label>
+      <input type="text" id="target" value="/home/xh/testapp">
+    </div>
+    <div class="actions">
+      <button id="run" onclick="startRun()">Run</button>
+    </div>
+  </div>
+
+  <div class="stepper" id="stepper" style="display:none">
+    <div class="step" data-step="PLAN">Plan</div>
+    <div class="step" data-step="RED">Red</div>
+    <div class="step" data-step="GREEN">Green</div>
+    <div class="step" data-step="REVIEW">Review</div>
+    <div class="step" data-step="REPORT">Report</div>
+  </div>
+
+  <div id="stages"></div>
+</div>
+
+<script>
+let evtSource = null;
+let currentCard = null;
+let toolCount = 0;
+
+const STEP_MAP = { 'PLAN': 'PLAN', 'RED': 'RED', 'GREEN': 'GREEN', 'REVIEW': 'REVIEW', 'REPORT': 'REPORT' };
+
+function classifyStage(name) {
+  const n = name.toUpperCase();
+  if (n.includes('PLAN')) return 'PLAN';
+  if (n.includes('RED')) return 'RED';
+  if (n.includes('GREEN')) return 'GREEN';
+  if (n.includes('REVIEW')) return 'REVIEW';
+  if (n.includes('REPORT')) return 'REPORT';
+  return null;
+}
+
+function updateStepper(stageName, markDone) {
+  const key = classifyStage(stageName);
+  if (!key) return;
+  const steps = document.querySelectorAll('.step');
+  let found = false;
+  steps.forEach(s => {
+    if (s.dataset.step === key) {
+      s.className = markDone ? 'step done' : 'step active';
+      found = true;
+    } else if (!found) {
+      s.className = 'step done';
+    }
+  });
+}
+
+function createStageCard(stage, description) {
+  // finalize previous card
+  finalizeCurrent();
+
+  const card = document.createElement('div');
+  card.className = 'stage-card';
+  card.innerHTML = `
+    <div class="stage-header" onclick="this.nextElementSibling.classList.toggle('open')">
+      <span class="stage-name">${description}</span>
+      <span class="stage-meta">
+        <span class="stage-badge badge-running"><span class="spinner"></span></span>
+      </span>
+    </div>
+    <div class="stage-body">
+      <ul class="tool-list"></ul>
+    </div>`;
+  document.getElementById('stages').appendChild(card);
+  currentCard = card;
+  toolCount = 0;
+  updateStepper(stage, false);
+}
+
+function finalizeCurrent() {
+  if (!currentCard) return;
+  const meta = currentCard.querySelector('.stage-meta');
+  // badge already set by result event; if not, clear spinner
+  if (meta.querySelector('.spinner')) {
+    meta.innerHTML = '<span class="stage-badge badge-done">done</span>';
+  }
+}
+
+function addTool(name) {
+  if (!currentCard) return;
+  toolCount++;
+  const list = currentCard.querySelector('.tool-list');
+  const li = document.createElement('li');
+  li.textContent = name;
+  list.appendChild(li);
+  // update tool count badge in header
+  let badge = currentCard.querySelector('.badge-tools');
+  if (!badge) {
+    const meta = currentCard.querySelector('.stage-meta');
+    badge = document.createElement('span');
+    badge.className = 'stage-badge badge-tools';
+    meta.insertBefore(badge, meta.firstChild);
+  }
+  badge.textContent = toolCount + ' tool' + (toolCount > 1 ? 's' : '');
+}
+
+function setResult(turns, cost, duration) {
+  if (!currentCard) return;
+  const meta = currentCard.querySelector('.stage-meta');
+  const secs = (duration / 1000).toFixed(1);
+  meta.innerHTML = `
+    <span class="stage-badge badge-tools">${toolCount} tools</span>
+    <span>${turns} turns</span>
+    <span>${cost}</span>
+    <span>${secs}s</span>`;
+  updateStepper(currentCard.querySelector('.stage-name').textContent, true);
+}
+
+function addLog(message) {
+  const el = document.createElement('div');
+  el.className = 'log-msg';
+  el.textContent = message;
+  document.getElementById('stages').appendChild(el);
+}
+
+function addError(message) {
+  const el = document.createElement('div');
+  el.className = 'error-msg';
+  el.textContent = message;
+  document.getElementById('stages').appendChild(el);
+}
+
+function showReport(text) {
+  finalizeCurrent();
+  const el = document.createElement('div');
+  el.className = 'report-card';
+  el.innerHTML = '<h2>Report</h2><div class="report-body"></div>';
+  el.querySelector('.report-body').textContent = text;
+  document.getElementById('stages').appendChild(el);
+}
+
+function connectSSE() {
+  const btn = document.getElementById('run');
+  btn.disabled = true;
+  document.getElementById('form-card').classList.add('hidden');
+  document.getElementById('stepper').style.display = 'flex';
+  document.getElementById('indicator').className = 'dot running';
+
+  evtSource = new EventSource('/api/events');
+
+  evtSource.addEventListener('init', () => {});
+
+  evtSource.addEventListener('banner', e => {
+    const d = JSON.parse(e.data);
+    createStageCard(d.stage, d.description);
+  });
+
+  evtSource.addEventListener('tool', e => {
+    const d = JSON.parse(e.data);
+    addTool(d.tool);
+  });
+
+  evtSource.addEventListener('result', e => {
+    const d = JSON.parse(e.data);
+    setResult(d.turns, d.cost, d.duration);
+  });
+
+  evtSource.addEventListener('log', e => {
+    const d = JSON.parse(e.data);
+    addLog(d.message);
+  });
+
+  evtSource.addEventListener('report', e => {
+    const d = JSON.parse(e.data);
+    showReport(d.text);
+  });
+
+  evtSource.addEventListener('error', e => {
+    try { addError(JSON.parse(e.data).message); } catch (_) {}
+  });
+
+  evtSource.addEventListener('done', () => {
+    finalizeCurrent();
+    document.getElementById('indicator').className = 'dot done';
+    document.getElementById('form-card').classList.remove('hidden');
+    btn.disabled = false;
+    evtSource.close();
+    evtSource = null;
+  });
+}
+
+async function startRun() {
+  const ticket = document.getElementById('ticket').value.trim();
+  const target = document.getElementById('target').value.trim();
+  if (!ticket) return;
+
+  document.getElementById('stages').innerHTML = '';
+  document.querySelectorAll('.step').forEach(s => s.className = 'step');
+  currentCard = null;
+
+  const res = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket, target }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    addError(err.error || 'Failed to start');
+    return;
+  }
+
+  await new Promise(r => setTimeout(r, 200));
+  connectSSE();
+}
+
+// On page load, check if there's a running or completed pipeline and reconnect
+(async function init() {
+  const res = await fetch('/api/status');
+  const s = await res.json();
+  if (s.status === 'running' || s.status === 'done') {
+    connectSSE();
+  }
+})();
+</script>
+</body>
+</html>

@@ -34,6 +34,8 @@ docker compose up -d
 
 ## Usage
 
+### CLI
+
 1. Write your bug or feature in `ticket.md`.
 2. Run the agent:
 
@@ -41,4 +43,12 @@ docker compose up -d
 python main.py
 ```
 
-The pipeline will print stage banners as it progresses and output a final report when done.
+### Web
+
+Start the web server and submit tickets from the browser:
+
+```bash
+python web.py
+```
+
+Open http://localhost:8080, paste a ticket, and click Run. Pipeline progress streams in real-time via SSE.
