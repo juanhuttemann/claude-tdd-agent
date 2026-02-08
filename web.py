@@ -14,7 +14,8 @@ from starlette.routing import Route
 from sse_starlette.sse import EventSourceResponse
 
 from events import EventBus
-from run_pipeline import run_pipeline
+from run_pipeline import PipelineStopped, run_pipeline
+from summarize import summarize_pipeline
 
 HTML_PATH = os.path.join(os.path.dirname(__file__), "static", "index.html")
 
@@ -23,13 +24,19 @@ _status: dict = {"status": "idle", "stage": ""}
 _bus: EventBus | None = None
 _task: asyncio.Task | None = None
 _history: list[dict] = []
+_stop_event: asyncio.Event = asyncio.Event()
+_ticket: str = ""
+_target: str = ""
 
 
-async def _run(ticket: str, target: str) -> None:
-    global _status, _bus, _task, _history
+async def _run(ticket: str, target: str, resume: bool = False) -> None:
+    global _status, _bus, _task, _history, _stop_event, _ticket, _target
     _history = []
     _bus = EventBus()
+    _stop_event.clear()
     _status = {"status": "running", "stage": "INIT"}
+    _ticket = ticket
+    _target = target
     try:
 
         async def _track_and_record() -> None:
@@ -41,11 +48,81 @@ async def _run(ticket: str, target: str) -> None:
 
         tracker = asyncio.create_task(_track_and_record())
 
-        report = await run_pipeline(ticket, target, event_bus=_bus)
+        # Load prior summary if resuming
+        prior_summary = None
+        if resume:
+            summary_path = os.path.join(target, ".tdd_summary.json")
+            if os.path.exists(summary_path):
+                with open(summary_path) as f:
+                    summary_data = json.load(f)
+                prior_summary = summary_data.get("summary", "")
+
+        report = await run_pipeline(
+            ticket,
+            target,
+            event_bus=_bus,
+            stop_event=_stop_event,
+            prior_summary=prior_summary,
+        )
         await _bus.emit({"type": "report", "data": {"text": report}})
         await _bus.emit({"type": "done", "data": {}})
         _status = {"status": "done", "stage": "DONE"}
         tracker.cancel()
+
+    except PipelineStopped as stopped:
+        # User requested stop — run summarization
+        _status = {"status": "stopping", "stage": "SUMMARIZE"}
+        await _bus.emit({"type": "stopped", "data": {"message": "Pipeline stopped by user"}})
+
+        try:
+            summary = await summarize_pipeline(
+                ticket=ticket,
+                target=target,
+                completed_stages=stopped.completed_stages,
+                interrupted_stage=stopped.current_stage,
+                tracker=stopped.tracker,
+                event_history=list(_history),
+                event_bus=_bus,
+            )
+            await _bus.emit({"type": "summary", "data": {"summary": summary}})
+        except Exception as sum_exc:
+            await _bus.emit({
+                "type": "error",
+                "data": {"message": f"Summarization failed: {sum_exc}"},
+            })
+
+        await _bus.emit({"type": "done", "data": {}})
+        _status = {"status": "done", "stage": "STOPPED"}
+
+    except asyncio.CancelledError:
+        # Task was cancelled (from stop endpoint) — run summarization
+        _status = {"status": "stopping", "stage": "SUMMARIZE"}
+        if _bus:
+            await _bus.emit({"type": "stopped", "data": {"message": "Pipeline stopped by user"}})
+
+            try:
+                # We don't have PipelineStopped info here, so use what we can
+                from test_tracker import TestTracker
+                fallback_tracker = TestTracker()
+                summary = await summarize_pipeline(
+                    ticket=ticket,
+                    target=target,
+                    completed_stages=[],
+                    interrupted_stage=_status.get("stage", "UNKNOWN"),
+                    tracker=fallback_tracker,
+                    event_history=list(_history),
+                    event_bus=_bus,
+                )
+                await _bus.emit({"type": "summary", "data": {"summary": summary}})
+            except Exception as sum_exc:
+                await _bus.emit({
+                    "type": "error",
+                    "data": {"message": f"Summarization failed: {sum_exc}"},
+                })
+
+            await _bus.emit({"type": "done", "data": {}})
+        _status = {"status": "done", "stage": "STOPPED"}
+
     except Exception as exc:
         if _bus:
             await _bus.emit({"type": "error", "data": {"message": str(exc)}})
@@ -68,11 +145,39 @@ async def api_run(request: Request) -> JSONResponse:
     body = await request.json()
     ticket = body.get("ticket", "").strip()
     target = body.get("target", os.getcwd()).strip()
+    resume = body.get("resume", False)
     if not ticket:
         return JSONResponse({"error": "ticket is required"}, status_code=400)
 
-    _task = asyncio.create_task(_run(ticket, target))
+    _task = asyncio.create_task(_run(ticket, target, resume=resume))
     return JSONResponse({"ok": True})
+
+
+async def api_stop(request: Request) -> JSONResponse:
+    """Stop the running pipeline and trigger summarization."""
+    global _stop_event, _task
+    if _task is None or _task.done():
+        return JSONResponse({"error": "No pipeline running"}, status_code=400)
+
+    _stop_event.set()
+    _task.cancel()
+    return JSONResponse({"ok": True})
+
+
+async def api_summary(request: Request) -> JSONResponse:
+    """Return the saved summary for a given target path."""
+    body = await request.json()
+    target = body.get("target", "").strip()
+    if not target:
+        return JSONResponse({"error": "target is required"}, status_code=400)
+
+    summary_path = os.path.join(target, ".tdd_summary.json")
+    if not os.path.exists(summary_path):
+        return JSONResponse({"error": "No summary found"}, status_code=404)
+
+    with open(summary_path) as f:
+        summary = json.load(f)
+    return JSONResponse(summary)
 
 
 async def api_events(request: Request) -> EventSourceResponse:
@@ -143,6 +248,8 @@ app = Starlette(
     routes=[
         Route("/", homepage),
         Route("/api/run", api_run, methods=["POST"]),
+        Route("/api/stop", api_stop, methods=["POST"]),
+        Route("/api/summary", api_summary, methods=["POST"]),
         Route("/api/events", api_events),
         Route("/api/status", api_status),
         Route("/api/config", api_config),

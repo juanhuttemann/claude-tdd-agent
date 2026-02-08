@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
@@ -7,6 +8,21 @@ from pipeline import print_banner, run_stage
 from test_hooks import create_test_monitor_hook
 from test_tracker import TestOutcome, TestResult, TestTracker
 from test_verifier import detect_test_command, verify_tests
+
+
+class PipelineStopped(Exception):
+    """Raised when the pipeline is stopped by the user between stages."""
+
+    def __init__(
+        self,
+        completed_stages: list[str],
+        current_stage: str,
+        tracker: TestTracker,
+    ) -> None:
+        self.completed_stages = completed_stages
+        self.current_stage = current_stage
+        self.tracker = tracker
+        super().__init__(f"Pipeline stopped during {current_stage}")
 
 MAX_REVIEW_ITERATIONS = int(os.getenv("MAX_REVIEW_ITERATIONS", "3"))
 MAX_GREEN_FIX_ATTEMPTS = int(os.getenv("MAX_GREEN_FIX_ATTEMPTS", "3"))
@@ -59,8 +75,22 @@ async def _verify_and_emit(
     return result
 
 
-async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = None) -> str:
+async def run_pipeline(
+    ticket: str,
+    target: str,
+    event_bus: EventBus | None = None,
+    stop_event: asyncio.Event | None = None,
+    prior_summary: str | None = None,
+) -> str:
     """Run the full TDD pipeline and return the final report text."""
+
+    completed_stages: list[str] = []
+    current_stage: str = "INIT"
+
+    def _check_stop() -> None:
+        """Raise PipelineStopped if the stop event is set."""
+        if stop_event and stop_event.is_set():
+            raise PipelineStopped(completed_stages, current_stage, tracker)
 
     print_banner("INIT", "TDD Agent Pipeline")
     await _emit(event_bus, {
@@ -91,15 +121,29 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
 
     async with ClaudeSDKClient(options=options) as client:
         # ── Stage 1 — PLAN ──
-        await run_stage(
-            client,
-            "STAGE 1 - PLAN",
-            "Analyzing ticket and planning approach",
-            _load_prompt("plan", ticket=ticket),
-            event_bus=event_bus,
-        )
+        current_stage = "PLAN"
+        _check_stop()
+        if prior_summary:
+            await run_stage(
+                client,
+                "STAGE 1 - PLAN (resume)",
+                "Resuming from previous run — reviewing prior progress",
+                _load_prompt("plan_resume", ticket=ticket, prior_summary=prior_summary),
+                event_bus=event_bus,
+            )
+        else:
+            await run_stage(
+                client,
+                "STAGE 1 - PLAN",
+                "Analyzing ticket and planning approach",
+                _load_prompt("plan", ticket=ticket),
+                event_bus=event_bus,
+            )
+        completed_stages.append("PLAN")
 
         # ── Stage 2 — RED (Write Tests) ──
+        current_stage = "RED"
+        _check_stop()
         await run_stage(
             client,
             "STAGE 2 - RED",
@@ -107,8 +151,11 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
             _load_prompt("red", test_cmd=test_cmd),
             event_bus=event_bus,
         )
+        completed_stages.append("RED")
 
         # ── Stage 3 — GREEN (Implement) ──
+        current_stage = "GREEN"
+        _check_stop()
         await run_stage(
             client,
             "STAGE 3 - GREEN",
@@ -119,9 +166,11 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
 
         # ── Verification gate after GREEN ──
         gate = await _verify_and_emit(tracker, target, "STAGE 3", event_bus)
+        completed_stages.append("GREEN")
 
         if gate.outcome != TestOutcome.PASS:
             for fix_attempt in range(1, MAX_GREEN_FIX_ATTEMPTS + 1):
+                _check_stop()
                 await run_stage(
                     client,
                     f"STAGE 3 - GREEN (fix attempt {fix_attempt}/{MAX_GREEN_FIX_ATTEMPTS})",
@@ -148,7 +197,9 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
                 )
 
         # ── Stage 4 — REVIEW loop ──
+        current_stage = "REVIEW"
         for iteration in range(1, MAX_REVIEW_ITERATIONS + 1):
+            _check_stop()
             # Run independent verification before each review
             verify_result = await _verify_and_emit(tracker, target, f"STAGE 4 round {iteration}", event_bus)
 
@@ -188,6 +239,7 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
                 break
 
             await _log(f"Reviewer found issues on round {iteration}, looping back...", event_bus)
+            _check_stop()
 
             # RED — write tests for the issues found
             await run_stage(
@@ -199,6 +251,7 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
             )
 
             # GREEN — fix the issues
+            _check_stop()
             await run_stage(
                 client,
                 f"STAGE 4.{iteration} - GREEN (fix)",
@@ -221,7 +274,11 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
                 event_bus,
             )
 
+        completed_stages.append("REVIEW")
+
         # ── Final verification before report ──
+        current_stage = "REPORT"
+        _check_stop()
         final_verify = await _verify_and_emit(tracker, target, "FINAL", event_bus)
 
         # ── Stage 5 — REPORT ──
@@ -243,5 +300,7 @@ async def run_pipeline(ticket: str, target: str, event_bus: EventBus | None = No
             _load_prompt("report", final_test_block=final_test_block),
             event_bus=event_bus,
         )
+
+        completed_stages.append("REPORT")
 
     return report
