@@ -10,14 +10,16 @@ import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
-from starlette.routing import Route
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from events import EventBus
 from run_pipeline import PipelineStopped, run_pipeline
 from summarize import summarize_pipeline
 
-HTML_PATH = os.path.join(os.path.dirname(__file__), "static", "index.html")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+HTML_PATH = os.path.join(STATIC_DIR, "index.html")
 
 # Global state
 _status: dict = {"status": "idle", "stage": ""}
@@ -254,6 +256,7 @@ app = Starlette(
         Route("/api/status", api_status),
         Route("/api/config", api_config),
         Route("/api/list_dirs", api_list_dirs, methods=["POST"]),
+        Mount("/static", StaticFiles(directory=STATIC_DIR), name="static"),
     ],
 )
 
