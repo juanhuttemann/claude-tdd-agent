@@ -39,9 +39,21 @@ async def run_stage(
                 if isinstance(block, TextBlock):
                     collected_text.append(block.text)
                 elif isinstance(block, ToolUseBlock):
+                    # Include tool input for better UI display
+                    tool_input = dict(block.input) if block.input else {}
+                    # Sanitize input for display (truncate long values)
+                    sanitized_input = {}
+                    for k, v in tool_input.items():
+                        v_str = str(v)
+                        if len(v_str) > 100:
+                            v_str = v_str[:97] + "..."
+                        sanitized_input[k] = v_str
                     print(f"  [{stage}] tool: {block.name}")
                     if event_bus:
-                        await event_bus.emit({"type": "tool", "data": {"stage": stage, "tool": block.name}})
+                        await event_bus.emit({
+                            "type": "tool",
+                            "data": {"stage": stage, "tool": block.name, "input": sanitized_input}
+                        })
         elif isinstance(message, UserMessage):
             # UserMessage carries ToolResultBlock content from tool executions
             content = message.content if isinstance(message.content, list) else []

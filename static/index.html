@@ -55,7 +55,7 @@
   .stage-body { display: none; padding: 0 16px 14px; border-top: 1px solid #21262d; }
   .stage-body.open { display: block; padding-top: 12px; }
   .tool-list { list-style: none; font-size: 12px; color: #8b949e; font-family: 'SF Mono', 'Consolas', monospace; max-height: 160px; overflow-y: auto; }
-  .tool-list li { padding: 2px 0; }
+  .tool-list li { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
   .tool-list li::before { content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: #484f58; margin-right: 8px; vertical-align: middle; }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -213,13 +213,44 @@ function finalizeCurrent() {
   }
 }
 
-function addTool(name) {
+function formatToolDescription(name, input) {
+  if (!input) return name;
+
+  switch (name) {
+    case 'Read':
+      return `Read: ${input.file_path || '?'}`;
+    case 'Write':
+      return `Write: ${input.file_path || '?'}`;
+    case 'Edit':
+      return `Edit: ${input.file_path || '?'}`;
+    case 'Bash':
+      return `Bash: ${input.command || '?'}`;
+    case 'Glob':
+      return `Glob: ${input.pattern || '?'}`;
+    case 'Grep':
+      return `Grep: ${input.pattern || '?'} ${input.path ? '(' + input.path + ')' : ''}`;
+    default:
+      // Try to show the most relevant field
+      const keys = Object.keys(input);
+      if (keys.length > 0) {
+        const key = keys.find(k => k.includes('path') || k.includes('file') || k.includes('pattern') || k.includes('command')) || keys[0];
+        return `${name}: ${input[key]}`;
+      }
+      return name;
+  }
+}
+
+function addTool(name, input) {
   if (!currentCard) return;
   toolCount++;
   const list = currentCard.querySelector('.tool-list');
   const li = document.createElement('li');
-  li.textContent = name;
+  const desc = formatToolDescription(name, input);
+  li.textContent = desc;
+  li.title = desc;  // Show full text on hover
   list.appendChild(li);
+  // Auto-scroll to bottom
+  list.scrollTop = list.scrollHeight;
   // update tool count badge in header
   let badge = currentCard.querySelector('.badge-tools');
   if (!badge) {
@@ -284,7 +315,7 @@ function connectSSE() {
 
   evtSource.addEventListener('tool', e => {
     const d = JSON.parse(e.data);
-    addTool(d.tool);
+    addTool(d.tool, d.input);
   });
 
   evtSource.addEventListener('result', e => {
