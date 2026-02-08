@@ -209,9 +209,15 @@ async def api_status(request: Request) -> JSONResponse:
 async def api_config(request: Request) -> JSONResponse:
     cwd = os.getcwd()
     home = os.path.expanduser("~")
+    summary = None
+    summary_path = os.path.join(cwd, ".tdd_summary.json")
+    if os.path.exists(summary_path):
+        with open(summary_path) as f:
+            summary = json.load(f)
     return JSONResponse({
         "default_target": cwd,
         "home": home,
+        "summary": summary,
         "common_dirs": [
             {"name": "Current", "path": cwd},
             {"name": "Parent", "path": os.path.dirname(cwd)},

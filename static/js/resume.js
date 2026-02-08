@@ -8,21 +8,30 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-export async function checkForSummary() {
+export async function checkForSummary(prefetched) {
   const target = document.getElementById('target').value.trim();
   if (!target) return;
 
   const section = document.getElementById('resume-section');
   try {
-    const res = await postSummary(target);
+    if (prefetched !== undefined) {
+      if (!prefetched) {
+        section.innerHTML = '';
+        state.cachedSummary = null;
+        return;
+      }
+      state.cachedSummary = prefetched;
+    } else {
+      const res = await postSummary(target);
 
-    if (!res.ok) {
-      section.innerHTML = '';
-      state.cachedSummary = null;
-      return;
+      if (!res.ok) {
+        section.innerHTML = '';
+        state.cachedSummary = null;
+        return;
+      }
+
+      state.cachedSummary = await res.json();
     }
-
-    state.cachedSummary = await res.json();
     const stages = state.cachedSummary.completed_stages || [];
     const interrupted = state.cachedSummary.interrupted_stage || '?';
     const ts = state.cachedSummary.test_status || {};

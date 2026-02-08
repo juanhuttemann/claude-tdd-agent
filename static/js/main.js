@@ -63,7 +63,7 @@ async function init() {
     });
   }
 
-  await checkForSummary();
+  await checkForSummary(config.summary);
 
   targetInput.addEventListener('change', () => checkForSummary());
 
