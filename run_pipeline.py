@@ -8,8 +8,8 @@ from test_hooks import create_test_monitor_hook
 from test_tracker import TestOutcome, TestResult, TestTracker
 from test_verifier import detect_test_command, verify_tests
 
-MAX_REVIEW_ITERATIONS = 3
-MAX_GREEN_FIX_ATTEMPTS = 3
+MAX_REVIEW_ITERATIONS = int(os.getenv("MAX_REVIEW_ITERATIONS", "3"))
+MAX_GREEN_FIX_ATTEMPTS = int(os.getenv("MAX_GREEN_FIX_ATTEMPTS", "3"))
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
