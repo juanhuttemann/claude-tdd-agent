@@ -16,6 +16,7 @@ from starlette.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from events import EventBus
+from optimizer import generate_questions, rewrite_ticket
 from run_pipeline import PipelineStopped, run_pipeline
 from summarize import summarize_pipeline
 
@@ -30,6 +31,7 @@ _history: list[dict] = []
 _stop_event: asyncio.Event = asyncio.Event()
 _ticket: str = ""
 _target: str = ""
+_optimize_task: asyncio.Task | None = None
 
 
 async def _run(ticket: str, target: str, resume: bool = False) -> None:
@@ -226,6 +228,56 @@ async def api_config(request: Request) -> JSONResponse:
     })
 
 
+async def api_optimize(request: Request) -> JSONResponse:
+    """Generate clarifying questions for a vague ticket."""
+    global _optimize_task
+    if _optimize_task is not None and not _optimize_task.done():
+        return JSONResponse({"error": "Optimization already in progress"}, status_code=409)
+
+    body = await request.json()
+    ticket = body.get("ticket", "").strip()
+    target = body.get("target", os.getcwd()).strip()
+    if not ticket:
+        return JSONResponse({"error": "ticket is required"}, status_code=400)
+
+    try:
+        _optimize_task = asyncio.ensure_future(generate_questions(ticket, target))
+        result = await _optimize_task
+        return JSONResponse(result)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    finally:
+        _optimize_task = None
+
+
+async def api_optimize_submit(request: Request) -> JSONResponse:
+    """Rewrite the ticket using user answers to clarifying questions."""
+    global _optimize_task
+    if _optimize_task is not None and not _optimize_task.done():
+        return JSONResponse({"error": "Optimization already in progress"}, status_code=409)
+
+    body = await request.json()
+    ticket = body.get("ticket", "").strip()
+    target = body.get("target", os.getcwd()).strip()
+    context = body.get("context", "")
+    answers = body.get("answers", [])
+    if not ticket:
+        return JSONResponse({"error": "ticket is required"}, status_code=400)
+    if not answers:
+        return JSONResponse({"error": "answers are required"}, status_code=400)
+
+    try:
+        _optimize_task = asyncio.ensure_future(
+            rewrite_ticket(ticket, target, context, answers)
+        )
+        rewritten = await _optimize_task
+        return JSONResponse({"optimized_ticket": rewritten})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    finally:
+        _optimize_task = None
+
+
 async def api_list_dirs(request: Request) -> JSONResponse:
     """List directories at a given path (for directory browser)."""
     body = await request.json()
@@ -262,6 +314,8 @@ app = Starlette(
         Route("/api/events", api_events),
         Route("/api/status", api_status),
         Route("/api/config", api_config),
+        Route("/api/optimize", api_optimize, methods=["POST"]),
+        Route("/api/optimize/submit", api_optimize_submit, methods=["POST"]),
         Route("/api/list_dirs", api_list_dirs, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC_DIR), name="static"),
     ],

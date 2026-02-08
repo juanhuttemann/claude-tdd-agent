@@ -37,3 +37,19 @@ export async function postListDirs(path) {
     body: JSON.stringify({ path }),
   });
 }
+
+export async function postOptimize(ticket, target) {
+  return fetch('/api/optimize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket, target }),
+  });
+}
+
+export async function postOptimizeSubmit(ticket, target, context, answers) {
+  return fetch('/api/optimize/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket, target, context, answers }),
+  });
+}

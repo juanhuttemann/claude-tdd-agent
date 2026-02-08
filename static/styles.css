@@ -114,3 +114,23 @@ button.danger:disabled { background: #21262d; color: #484f58; }
 .search-bar { padding: 10px 20px; border-bottom: 1px solid #30363d; }
 .search-input { width: 100%; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .search-input:focus { outline: none; border-color: #58a6ff; }
+
+/* Plan Optimizer */
+.opt-panel { margin-top: 14px; }
+.opt-loading { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #8b949e; }
+.opt-context { font-size: 12px; color: #8b949e; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; line-height: 1.6; }
+.opt-q + .opt-q { margin-top: 14px; }
+.opt-q-text { font-size: 13px; font-weight: 600; color: #e6edf3; margin-bottom: 8px; }
+.opt-opts { display: flex; flex-direction: column; gap: 4px; }
+.opt-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #c9d1d9; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: normal; margin-bottom: 0; }
+.opt-opt:hover { background: #1c2129; }
+.opt-opt input[type="radio"] { accent-color: #58a6ff; flex-shrink: 0; }
+.opt-custom-input { flex: 1; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-family: inherit; }
+.opt-custom-input:disabled { opacity: 0.4; }
+.opt-custom-input:focus { outline: none; border-color: #58a6ff; }
+.opt-actions { margin-top: 14px; }
+.opt-actions button { background: #58a6ff; color: #0d1117; font-weight: 600; }
+.opt-actions button:hover { background: #79c0ff; }
+.opt-actions button:disabled { background: #21262d; color: #484f58; }
+.opt-error { font-size: 13px; color: #f85149; margin-top: 8px; }
+.opt-ok { font-size: 13px; color: #3fb950; font-weight: 600; }

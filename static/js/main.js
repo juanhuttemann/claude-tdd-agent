@@ -5,6 +5,7 @@ import { connectSSE, startTimer } from './sse.js';
 import { addError } from './notifications.js';
 import { checkForSummary } from './resume.js';
 import { openDirBrowser, closeDirBrowser, filterDirectories, setQuickPath } from './dirBrowser.js';
+import { startOptimize, submitOptimize } from './optimizer.js';
 
 async function stopPipeline() {
   const btn = document.getElementById('stop-btn');
@@ -82,3 +83,5 @@ window.stopPipeline = stopPipeline;
 window.openDirBrowser = openDirBrowser;
 window.closeDirBrowser = closeDirBrowser;
 window.filterDirectories = filterDirectories;
+window.startOptimize = startOptimize;
+window.submitOptimize = submitOptimize;
