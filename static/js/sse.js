@@ -4,6 +4,34 @@ import { createStageCard, addTool, setResult, finalizeCurrent } from './stages.j
 import { addLog, addError, showReport, showStopped, showSummary } from './notifications.js';
 import { checkForSummary } from './resume.js';
 
+function formatElapsed(ms) {
+  const totalSecs = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return mins > 0 ? `${mins}m ${String(secs).padStart(2, '0')}s` : `${secs}s`;
+}
+
+function updateTimerDisplay() {
+  if (!state.pipelineStartedAt) return;
+  const el = document.getElementById('elapsed-timer');
+  if (el) el.textContent = formatElapsed(Date.now() - state.pipelineStartedAt);
+}
+
+export function startTimer(startedAt) {
+  stopTimer();
+  state.pipelineStartedAt = startedAt;
+  updateTimerDisplay();
+  state.timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopTimer() {
+  if (state.timerInterval) {
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+  }
+  updateTimerDisplay(); // show final value
+}
+
 export function connectSSE() {
   const btn = document.getElementById('run');
   btn.disabled = true;
@@ -15,8 +43,6 @@ export function connectSSE() {
   document.getElementById('indicator').className = 'dot running';
 
   state.evtSource = new EventSource('/api/events');
-
-  state.evtSource.addEventListener('init', () => {});
 
   state.evtSource.addEventListener('banner', e => {
     const d = JSON.parse(e.data);
@@ -60,6 +86,7 @@ export function connectSSE() {
 
   state.evtSource.addEventListener('done', () => {
     finalizeCurrent();
+    stopTimer();
     document.getElementById('indicator').className = 'dot done';
     document.getElementById('form-card').classList.remove('hidden');
     document.getElementById('stop-btn').style.display = 'none';

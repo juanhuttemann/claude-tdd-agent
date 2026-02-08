@@ -5,6 +5,7 @@ load_dotenv()
 import asyncio
 import json
 import os
+import time
 
 import uvicorn
 from starlette.applications import Starlette
@@ -36,7 +37,7 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
     _history = []
     _bus = EventBus()
     _stop_event.clear()
-    _status = {"status": "running", "stage": "INIT"}
+    _status = {"status": "running", "stage": "INIT", "started_at": time.time() * 1000}
     _ticket = ticket
     _target = target
     try:
@@ -68,12 +69,12 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
         )
         await _bus.emit({"type": "report", "data": {"text": report}})
         await _bus.emit({"type": "done", "data": {}})
-        _status = {"status": "done", "stage": "DONE"}
+        _status.update({"status": "done", "stage": "DONE"})
         tracker.cancel()
 
     except PipelineStopped as stopped:
         # User requested stop — run summarization
-        _status = {"status": "stopping", "stage": "SUMMARIZE"}
+        _status.update({"status": "stopping", "stage": "SUMMARIZE"})
         await _bus.emit({"type": "stopped", "data": {"message": "Pipeline stopped by user"}})
 
         try:
@@ -94,11 +95,11 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
             })
 
         await _bus.emit({"type": "done", "data": {}})
-        _status = {"status": "done", "stage": "STOPPED"}
+        _status.update({"status": "done", "stage": "STOPPED"})
 
     except asyncio.CancelledError:
         # Task was cancelled (from stop endpoint) — run summarization
-        _status = {"status": "stopping", "stage": "SUMMARIZE"}
+        _status.update({"status": "stopping", "stage": "SUMMARIZE"})
         if _bus:
             await _bus.emit({"type": "stopped", "data": {"message": "Pipeline stopped by user"}})
 
@@ -123,13 +124,13 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
                 })
 
             await _bus.emit({"type": "done", "data": {}})
-        _status = {"status": "done", "stage": "STOPPED"}
+        _status.update({"status": "done", "stage": "STOPPED"})
 
     except Exception as exc:
         if _bus:
             await _bus.emit({"type": "error", "data": {"message": str(exc)}})
             await _bus.emit({"type": "done", "data": {}})
-        _status = {"status": "idle", "stage": ""}
+        _status.update({"status": "idle", "stage": ""})
     finally:
         _task = None
 

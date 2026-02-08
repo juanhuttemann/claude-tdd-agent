@@ -6,4 +6,6 @@ export const state = {
   cachedSummary: null,
   currentBrowsePath: null,
   currentDirEntries: [],
+  pipelineStartedAt: null,
+  timerInterval: null,
 };

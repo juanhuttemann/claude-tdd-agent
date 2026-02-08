@@ -1,7 +1,7 @@
 // Entry point: init, startRun, stopPipeline, window.* bridges
 import { state } from './state.js';
 import { fetchConfig, fetchStatus, postRun, postStop } from './api.js';
-import { connectSSE } from './sse.js';
+import { connectSSE, startTimer } from './sse.js';
 import { addError } from './notifications.js';
 import { checkForSummary } from './resume.js';
 import { openDirBrowser, closeDirBrowser, filterDirectories, setQuickPath } from './dirBrowser.js';
@@ -39,6 +39,7 @@ async function startRun() {
     return;
   }
 
+  startTimer(Date.now());
   await new Promise(r => setTimeout(r, 200));
   connectSSE();
 }
@@ -68,6 +69,7 @@ async function init() {
 
   const s = await fetchStatus();
   if (s.status === 'running' || s.status === 'done') {
+    if (s.started_at) startTimer(s.started_at);
     connectSSE();
   }
 }
