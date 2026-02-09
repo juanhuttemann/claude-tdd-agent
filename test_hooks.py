@@ -62,18 +62,43 @@ def create_test_monitor_hook(tracker: TestTracker):
         await tracker.record(result)
 
         if result.outcome == TestOutcome.FAIL:
+            # Detect if the agent is stuck in a loop with the same failure count
+            # Exclude the result we just appended (last element)
+            recent = tracker.results[-6:-1]
+            consecutive_same = 0
+            for prev in reversed(recent):
+                if (
+                    prev.outcome == TestOutcome.FAIL
+                    and prev.failures == result.failures
+                    and prev.errors == result.errors
+                ):
+                    consecutive_same += 1
+                else:
+                    break
+
+            context_msg = (
+                "[PIPELINE MONITOR] TESTS FAILED (exit code "
+                f"{exit_code}, {result.failures} failures, "
+                f"{result.errors} errors). "
+                "These failures are REAL bugs, NOT intentional. "
+                "You MUST fix the implementation to make ALL tests "
+                "pass. Do NOT claim any failures are expected or "
+                "intentional. Do NOT proceed until all tests pass."
+            )
+
+            if consecutive_same >= 3:
+                context_msg += (
+                    " WARNING: Same failure count for the last "
+                    f"{consecutive_same} consecutive runs — you appear stuck "
+                    "in a loop. STOP repeating the same fix. Re-read the "
+                    "failing test file to understand what is actually "
+                    "expected, then try a fundamentally different approach."
+                )
+
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",
-                    "additionalContext": (
-                        "[PIPELINE MONITOR] TESTS FAILED (exit code "
-                        f"{exit_code}, {result.failures} failures, "
-                        f"{result.errors} errors). "
-                        "These failures are REAL bugs, NOT intentional. "
-                        "You MUST fix the implementation to make ALL tests "
-                        "pass. Do NOT claim any failures are expected or "
-                        "intentional. Do NOT proceed until all tests pass."
-                    ),
+                    "additionalContext": context_msg,
                 }
             }
 

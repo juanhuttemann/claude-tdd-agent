@@ -17,6 +17,7 @@ from test_tracker import TestTracker
 from test_verifier import verify_tests
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+SUMMARIZE_MODEL = os.getenv("SUMMARIZE_MODEL", "sonnet") or None
 
 
 def _load_prompt(name: str, **kwargs: str) -> str:
@@ -34,6 +35,7 @@ async def summarize_pipeline(
     tracker: TestTracker,
     event_history: list[dict],
     event_bus: EventBus | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """Run a summarization agent and return a structured summary dict.
 
@@ -91,23 +93,27 @@ async def summarize_pipeline(
         files_modified=files_list,
     )
 
-    # Run a short summarization session
+    # Fork the pipeline session if available so the summarizer has full context,
+    # otherwise fall back to a fresh session.
     options = ClaudeAgentOptions(
         allowed_tools=["Read", "Glob", "Grep", "Bash"],
         permission_mode="bypassPermissions",
+        model=SUMMARIZE_MODEL,
         cwd=target,
         max_turns=15,
+        **({"resume": session_id, "fork_session": True} if session_id else {}),
     )
 
     summary_text = ""
     async with ClaudeSDKClient(options=options) as client:
-        summary_text = await run_stage(
+        result = await run_stage(
             client,
             "SUMMARIZE",
             "Generating pipeline summary",
             prompt,
             event_bus=event_bus,
         )
+        summary_text = result.text
 
     # Build the structured summary
     summary = {

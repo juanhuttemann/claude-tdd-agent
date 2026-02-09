@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeSDKClient,
@@ -9,6 +11,12 @@ from claude_agent_sdk import (
 )
 
 from events import EventBus
+
+
+@dataclass
+class StageResult:
+    text: str
+    session_id: str | None = None
 
 
 def print_banner(stage: str, description: str, event_bus: EventBus | None = None) -> None:
@@ -24,7 +32,7 @@ async def run_stage(
     description: str,
     prompt: str,
     event_bus: EventBus | None = None,
-) -> str:
+) -> StageResult:
     """Send a prompt to the agent session, collect and return text output."""
     print_banner(stage, description)
     if event_bus:
@@ -33,6 +41,7 @@ async def run_stage(
     await client.query(prompt)
 
     collected_text: list[str] = []
+    session_id: str | None = None
     async for message in client.receive_response():
         if isinstance(message, AssistantMessage):
             for block in message.content:
@@ -67,6 +76,7 @@ async def run_stage(
                             "data": {"stage": stage, "error": snippet},
                         })
         elif isinstance(message, ResultMessage):
+            session_id = message.session_id
             cost = f"${message.total_cost_usd:.4f}" if message.total_cost_usd else "n/a"
             duration = message.duration_ms
             turns = message.num_turns
@@ -77,4 +87,4 @@ async def run_stage(
                     "data": {"stage": stage, "turns": turns, "cost": cost, "duration": duration},
                 })
 
-    return "\n".join(collected_text)
+    return StageResult(text="\n".join(collected_text), session_id=session_id)

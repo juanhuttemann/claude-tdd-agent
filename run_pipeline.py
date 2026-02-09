@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
 
@@ -8,6 +9,34 @@ from pipeline import print_banner, run_stage
 from test_hooks import create_test_monitor_hook
 from test_tracker import TestOutcome, TestResult, TestTracker
 from test_verifier import detect_test_command, verify_tests
+
+_BLOCKED_BASH_PATTERNS = [
+    r"rm\s+-r[fd]?\s+/(?!\S)",  # rm -rf / (but not rm -rf /some/path)
+    r"git\s+push",
+    r"git\s+reset\s+--hard",
+    r"git\s+clean\s+-[fd]",
+    r"mkfs\b",
+    r"dd\s+.*of=/dev/",
+    r":\(\)\{.*\}",             # fork bomb
+    r"sudo\s+",
+    r"chmod\s+-R\s+777\s+/",
+    r"drop\s+(table|database)\b",
+    r"truncate\s+table\b",
+]
+
+_TEST_FILE_PATTERNS = [
+    r"(^|/)tests?/",            # test/ or tests/ directory
+    r"(^|/)spec/",              # spec/ directory (rspec)
+    r"_test\.\w+$",             # _test.go, _test.py, etc.
+    r"_spec\.\w+$",             # _spec.rb, _spec.ts, etc.
+    r"\.test\.\w+$",            # .test.js, .test.ts, etc.
+    r"\.spec\.\w+$",            # .spec.js, .spec.ts, etc.
+    r"test_[^/]+\.py$",         # test_*.py (pytest convention)
+]
+
+
+def _is_test_file(file_path: str) -> bool:
+    return any(re.search(p, file_path) for p in _TEST_FILE_PATTERNS)
 
 
 class PipelineStopped(Exception):
@@ -18,14 +47,21 @@ class PipelineStopped(Exception):
         completed_stages: list[str],
         current_stage: str,
         tracker: TestTracker,
+        session_id: str | None = None,
     ) -> None:
         self.completed_stages = completed_stages
         self.current_stage = current_stage
         self.tracker = tracker
+        self.session_id = session_id
         super().__init__(f"Pipeline stopped during {current_stage}")
 
 MAX_REVIEW_ITERATIONS = int(os.getenv("MAX_REVIEW_ITERATIONS", "3"))
 MAX_GREEN_FIX_ATTEMPTS = int(os.getenv("MAX_GREEN_FIX_ATTEMPTS", "3"))
+
+# Model for the main pipeline session (PLAN → RED → GREEN → REVIEW)
+PIPELINE_MODEL = os.getenv("PIPELINE_MODEL") or None
+# Cheaper model for the report stage (formatting only)
+REPORT_MODEL = os.getenv("REPORT_MODEL", "haiku") or None
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
@@ -86,11 +122,12 @@ async def run_pipeline(
 
     completed_stages: list[str] = []
     current_stage: str = "INIT"
+    pipeline_session_id: str | None = None
 
     def _check_stop() -> None:
         """Raise PipelineStopped if the stop event is set."""
         if stop_event and stop_event.is_set():
-            raise PipelineStopped(completed_stages, current_stage, tracker)
+            raise PipelineStopped(completed_stages, current_stage, tracker, pipeline_session_id)
 
     print_banner("INIT", "TDD Agent Pipeline")
     await _emit(event_bus, {
@@ -107,12 +144,68 @@ async def run_pipeline(
 
     test_monitor_hook = create_test_monitor_hook(tracker)
 
+    async def protect_test_files(input_data, tool_use_id, context):
+        if current_stage not in ("GREEN", "REVIEW_GREEN"):
+            return {}
+        file_path = input_data.get("tool_input", {}).get("file_path", "")
+        if file_path and _is_test_file(file_path):
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        f"[PIPELINE GUARDRAIL] Cannot modify test file "
+                        f"{file_path} during {current_stage} stage. "
+                        "Only implementation files should be changed."
+                    ),
+                }
+            }
+        return {}
+
+    async def bash_guardrail(input_data, tool_use_id, context):
+        command = input_data.get("tool_input", {}).get("command", "")
+        for pattern in _BLOCKED_BASH_PATTERNS:
+            if re.search(pattern, command, re.IGNORECASE):
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": (
+                            f"[PIPELINE GUARDRAIL] Blocked dangerous command: "
+                            f"{command[:120]}"
+                        ),
+                    }
+                }
+        return {}
+
+    async def pre_compact_hook(input_data, tool_use_id, context):
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreCompact",
+                "customInstructions": (
+                    "CRITICAL PIPELINE CONTEXT — preserve across compaction:\n"
+                    f"  Current stage: {current_stage}\n"
+                    f"  Test command: {test_cmd}\n"
+                    f"  Test status: {tracker.summary()}\n"
+                    f"  Completed stages: {', '.join(completed_stages)}\n"
+                ),
+            }
+        }
+
     options = ClaudeAgentOptions(
         allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         permission_mode="bypassPermissions",
+        model=PIPELINE_MODEL,
         cwd=target,
         max_turns=50,
         hooks={
+            "PreToolUse": [
+                HookMatcher(matcher="Write|Edit", hooks=[protect_test_files]),
+                HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
+            ],
+            "PreCompact": [
+                HookMatcher(hooks=[pre_compact_hook]),
+            ],
             "PostToolUse": [
                 HookMatcher(matcher="Bash", hooks=[test_monitor_hook]),
             ],
@@ -124,7 +217,7 @@ async def run_pipeline(
         current_stage = "PLAN"
         _check_stop()
         if prior_summary:
-            await run_stage(
+            plan_result = await run_stage(
                 client,
                 "STAGE 1 - PLAN (resume)",
                 "Resuming from previous run — reviewing prior progress",
@@ -132,13 +225,14 @@ async def run_pipeline(
                 event_bus=event_bus,
             )
         else:
-            await run_stage(
+            plan_result = await run_stage(
                 client,
                 "STAGE 1 - PLAN",
                 "Analyzing ticket and planning approach",
                 _load_prompt("plan", ticket=ticket),
                 event_bus=event_bus,
             )
+        pipeline_session_id = plan_result.session_id
         completed_stages.append("PLAN")
 
         # ── Stage 2 — RED (Write Tests) ──
@@ -197,8 +291,8 @@ async def run_pipeline(
                 )
 
         # ── Stage 4 — REVIEW loop ──
-        current_stage = "REVIEW"
         for iteration in range(1, MAX_REVIEW_ITERATIONS + 1):
+            current_stage = "REVIEW"
             _check_stop()
             # Run independent verification before each review
             verify_result = await _verify_and_emit(tracker, target, f"STAGE 4 round {iteration}", event_bus)
@@ -216,13 +310,14 @@ async def run_pipeline(
                     f"  Output (tail):\n```\n{verify_result.stdout[-2000:]}\n```\n"
                 )
 
-            review = await run_stage(
+            review_result = await run_stage(
                 client,
                 f"STAGE 4 - REVIEW (round {iteration}/{MAX_REVIEW_ITERATIONS})",
                 "Reviewing implementation",
                 _load_prompt("review", test_status_block=test_status_block),
                 event_bus=event_bus,
             )
+            review = review_result.text
 
             # Override APPROVED if tests are actually failing
             if "VERDICT: APPROVED" in review and verify_result.outcome != TestOutcome.PASS:
@@ -242,6 +337,7 @@ async def run_pipeline(
             _check_stop()
 
             # RED — write tests for the issues found
+            current_stage = "REVIEW_RED"
             await run_stage(
                 client,
                 f"STAGE 4.{iteration} - RED (fix)",
@@ -251,6 +347,7 @@ async def run_pipeline(
             )
 
             # GREEN — fix the issues
+            current_stage = "REVIEW_GREEN"
             _check_stop()
             await run_stage(
                 client,
@@ -276,31 +373,39 @@ async def run_pipeline(
 
         completed_stages.append("REVIEW")
 
-        # ── Final verification before report ──
-        current_stage = "REPORT"
-        _check_stop()
-        final_verify = await _verify_and_emit(tracker, target, "FINAL", event_bus)
+    # ── Final verification before report ──
+    current_stage = "REPORT"
+    _check_stop()
+    final_verify = await _verify_and_emit(tracker, target, "FINAL", event_bus)
 
-        # ── Stage 5 — REPORT ──
-        final_test_block = (
-            f"FINAL TEST VERIFICATION (authoritative):\n"
-            f"  Command: {final_verify.command}\n"
-            f"  Exit code: {final_verify.exit_code}\n"
-            f"  Outcome: {final_verify.outcome.value}\n"
-            f"  Tests: {final_verify.total_tests}, "
-            f"Failures: {final_verify.failures}, Errors: {final_verify.errors}\n"
-        )
-        if final_verify.stdout:
-            final_test_block += f"  Output:\n```\n{final_verify.stdout[-2000:]}\n```\n"
+    # ── Stage 5 — REPORT (separate session, cheaper model) ──
+    final_test_block = (
+        f"FINAL TEST VERIFICATION (authoritative):\n"
+        f"  Command: {final_verify.command}\n"
+        f"  Exit code: {final_verify.exit_code}\n"
+        f"  Outcome: {final_verify.outcome.value}\n"
+        f"  Tests: {final_verify.total_tests}, "
+        f"Failures: {final_verify.failures}, Errors: {final_verify.errors}\n"
+    )
+    if final_verify.stdout:
+        final_test_block += f"  Output:\n```\n{final_verify.stdout[-2000:]}\n```\n"
 
-        report = await run_stage(
-            client,
+    report_options = ClaudeAgentOptions(
+        allowed_tools=["Read", "Glob", "Grep"],
+        permission_mode="bypassPermissions",
+        model=REPORT_MODEL,
+        cwd=target,
+        max_turns=10,
+    )
+    async with ClaudeSDKClient(options=report_options) as report_client:
+        report_result = await run_stage(
+            report_client,
             "STAGE 5 - REPORT",
             "Generating final TDD report",
             _load_prompt("report", final_test_block=final_test_block),
             event_bus=event_bus,
         )
 
-        completed_stages.append("REPORT")
+    completed_stages.append("REPORT")
 
-    return report
+    return report_result.text

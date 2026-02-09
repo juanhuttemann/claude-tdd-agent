@@ -88,6 +88,7 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
                 tracker=stopped.tracker,
                 event_history=list(_history),
                 event_bus=_bus,
+                session_id=stopped.session_id,
             )
             await _bus.emit({"type": "summary", "data": {"summary": summary}})
         except Exception as sum_exc:

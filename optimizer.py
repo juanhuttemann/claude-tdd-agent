@@ -12,6 +12,7 @@ from claude_agent_sdk import (
 )
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+OPTIMIZER_MODEL = os.getenv("OPTIMIZER_MODEL", "sonnet") or None
 
 
 def _load_prompt(name: str, **kwargs: str) -> str:
@@ -26,6 +27,7 @@ async def _run_query(prompt: str, target: str) -> str:
     options = ClaudeAgentOptions(
         allowed_tools=["Read", "Glob", "Grep"],
         permission_mode="bypassPermissions",
+        model=OPTIMIZER_MODEL,
         cwd=target,
         max_turns=20,
     )
