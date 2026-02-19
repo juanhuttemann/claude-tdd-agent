@@ -57,9 +57,12 @@ class PipelineStopped(Exception):
 
 MAX_REVIEW_ITERATIONS = int(os.getenv("MAX_REVIEW_ITERATIONS", "3"))
 MAX_GREEN_FIX_ATTEMPTS = int(os.getenv("MAX_GREEN_FIX_ATTEMPTS", "3"))
+MAX_SECURITY_ITERATIONS = int(os.getenv("MAX_SECURITY_ITERATIONS", "2"))
 
-# Model for the main pipeline session (PLAN → RED → GREEN → REVIEW)
+# Model for the main pipeline session (PLAN → RED → GREEN → CODE REVIEW → SECURITY REVIEW)
 PIPELINE_MODEL = os.getenv("PIPELINE_MODEL") or None
+# Model for the security review stage (defaults to pipeline model)
+SECURITY_MODEL = os.getenv("SECURITY_MODEL") or None
 # Cheaper model for the report stage (formatting only)
 REPORT_MODEL = os.getenv("REPORT_MODEL", "haiku") or None
 
@@ -145,7 +148,7 @@ async def run_pipeline(
     test_monitor_hook = create_test_monitor_hook(tracker)
 
     async def protect_test_files(input_data, tool_use_id, context):
-        if current_stage not in ("GREEN", "REVIEW_GREEN"):
+        if current_stage not in ("GREEN", "REVIEW_GREEN", "SECURITY_GREEN"):
             return {}
         file_path = input_data.get("tool_input", {}).get("file_path", "")
         if file_path and _is_test_file(file_path):
@@ -290,7 +293,7 @@ async def run_pipeline(
                     event_bus,
                 )
 
-        # ── Stage 4 — REVIEW loop ──
+        # ── Stage 4 — CODE REVIEW loop ──
         for iteration in range(1, MAX_REVIEW_ITERATIONS + 1):
             current_stage = "REVIEW"
             _check_stop()
@@ -312,8 +315,8 @@ async def run_pipeline(
 
             review_result = await run_stage(
                 client,
-                f"STAGE 4 - REVIEW (round {iteration}/{MAX_REVIEW_ITERATIONS})",
-                "Reviewing implementation",
+                f"STAGE 4 - CODE REVIEW (round {iteration}/{MAX_REVIEW_ITERATIONS})",
+                "Reviewing implementation for correctness and quality",
                 _load_prompt("review", test_status_block=test_status_block),
                 event_bus=event_bus,
             )
@@ -373,12 +376,87 @@ async def run_pipeline(
 
         completed_stages.append("REVIEW")
 
+        # ── Stage 5 — SECURITY REVIEW loop ──
+        security_options = ClaudeAgentOptions(
+            allowed_tools=["Read", "Glob", "Grep", "Bash"],
+            permission_mode="bypassPermissions",
+            model=SECURITY_MODEL,
+            cwd=target,
+            max_turns=30,
+            hooks={
+                "PreToolUse": [
+                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
+                ],
+            },
+        )
+
+        for sec_iteration in range(1, MAX_SECURITY_ITERATIONS + 1):
+            current_stage = "SECURITY_REVIEW"
+            _check_stop()
+
+            async with ClaudeSDKClient(options=security_options) as security_client:
+                security_result = await run_stage(
+                    security_client,
+                    f"STAGE 5 - SECURITY REVIEW (round {sec_iteration}/{MAX_SECURITY_ITERATIONS})",
+                    "Scanning for leaked credentials, vulnerable packages, and insecure code",
+                    _load_prompt("security_review"),
+                    event_bus=event_bus,
+                )
+            security_text = security_result.text
+
+            if "SECURITY: APPROVED" in security_text:
+                await _log(f"Security review APPROVED on round {sec_iteration}", event_bus)
+                break
+
+            if "SECURITY: ISSUES_FOUND" not in security_text:
+                await _log(
+                    "Security reviewer did not provide a clear verdict — treating as APPROVED",
+                    event_bus,
+                )
+                break
+
+            await _log(
+                f"Security reviewer found issues on round {sec_iteration}, fixing...",
+                event_bus,
+            )
+
+            if sec_iteration == MAX_SECURITY_ITERATIONS:
+                await _log(
+                    f"WARNING: Security issues persist after {MAX_SECURITY_ITERATIONS} rounds — proceeding to report.",
+                    event_bus,
+                )
+                break
+
+            # Fix security issues using the main client
+            current_stage = "SECURITY_GREEN"
+            _check_stop()
+            await run_stage(
+                client,
+                f"STAGE 5.{sec_iteration} - SECURITY FIX",
+                "Fixing security issues found by the security reviewer",
+                _load_prompt("security_fix", security_issues=security_text, test_cmd=test_cmd),
+                event_bus=event_bus,
+            )
+
+            # Verify tests still pass after security fix
+            sec_gate = await _verify_and_emit(
+                tracker, target, f"STAGE 5.{sec_iteration} security fix", event_bus
+            )
+            if sec_gate.outcome != TestOutcome.PASS:
+                await _log(
+                    f"Tests failing after security fix round {sec_iteration}: "
+                    f"{sec_gate.failures} failures, {sec_gate.errors} errors",
+                    event_bus,
+                )
+
+        completed_stages.append("SECURITY_REVIEW")
+
     # ── Final verification before report ──
     current_stage = "REPORT"
     _check_stop()
     final_verify = await _verify_and_emit(tracker, target, "FINAL", event_bus)
 
-    # ── Stage 5 — REPORT (separate session, cheaper model) ──
+    # ── Stage 6 — REPORT (separate session, cheaper model) ──
     final_test_block = (
         f"FINAL TEST VERIFICATION (authoritative):\n"
         f"  Command: {final_verify.command}\n"
@@ -400,7 +478,7 @@ async def run_pipeline(
     async with ClaudeSDKClient(options=report_options) as report_client:
         report_result = await run_stage(
             report_client,
-            "STAGE 5 - REPORT",
+            "STAGE 6 - REPORT",
             "Generating final TDD report",
             _load_prompt("report", final_test_block=final_test_block),
             event_bus=event_bus,

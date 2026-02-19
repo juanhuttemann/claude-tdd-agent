@@ -5,6 +5,7 @@ function classifyStage(name) {
   const n = name.toUpperCase();
   if (n.includes('PLAN')) return 'PLAN';
   if (n.includes('RED')) return 'RED';
+  if (n.includes('SECURITY')) return 'SECURITY';  // must precede REVIEW check
   if (n.includes('GREEN')) return 'GREEN';
   if (n.includes('REVIEW')) return 'REVIEW';
   if (n.includes('REPORT')) return 'REPORT';
