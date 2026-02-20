@@ -4,10 +4,11 @@ import { state } from './state.js';
 function classifyStage(name) {
   const n = name.toUpperCase();
   if (n.includes('PLAN')) return 'PLAN';
+  if (n.includes('SECURITY')) return 'SECURITY';  // before REVIEW: "SECURITY REVIEW" → SECURITY
+  if (n.includes('REVIEW')) return 'REVIEW';       // before RED/GREEN: "CODE REVIEW RED/GREEN" → REVIEW
+  if (n.includes(' QA')) return 'QA';              // "STAGE 6 - QA" / "QA FIX"
   if (n.includes('RED')) return 'RED';
-  if (n.includes('SECURITY')) return 'SECURITY';  // must precede REVIEW check
   if (n.includes('GREEN')) return 'GREEN';
-  if (n.includes('REVIEW')) return 'REVIEW';
   if (n.includes('REPORT')) return 'REPORT';
   return null;
 }

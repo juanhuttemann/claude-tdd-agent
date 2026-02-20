@@ -1,7 +1,7 @@
 // SSE connection + event wiring
 import { state } from './state.js';
 import { createStageCard, addTool, setResult, finalizeCurrent } from './stages.js';
-import { addLog, addError, showReport, showStopped, showSummary } from './notifications.js';
+import { addVerifyResult, addLog, addError, showReport, showStopped, showSummary } from './notifications.js';
 import { checkForSummary } from './resume.js';
 
 function formatElapsed(ms) {
@@ -57,6 +57,11 @@ export function connectSSE() {
   state.evtSource.addEventListener('result', e => {
     const d = JSON.parse(e.data);
     setResult(d.turns, d.cost, d.duration);
+  });
+
+  state.evtSource.addEventListener('test_verify', e => {
+    const d = JSON.parse(e.data);
+    addVerifyResult(d);
   });
 
   state.evtSource.addEventListener('log', e => {

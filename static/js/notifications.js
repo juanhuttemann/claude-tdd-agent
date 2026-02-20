@@ -1,6 +1,20 @@
 // Log, error, report, stopped, and summary card rendering
 import { finalizeCurrent } from './stages.js';
 
+export function addVerifyResult(data) {
+  const pass = data.outcome === 'pass';
+  const el = document.createElement('div');
+  el.className = `verify-card ${pass ? 'pass' : 'fail'}`;
+  const label = pass ? 'PASS' : 'FAIL';
+  const parts = [];
+  if (data.total_tests != null) parts.push(`${data.total_tests} tests`);
+  if (data.failures) parts.push(`${data.failures} failures`);
+  if (data.errors) parts.push(`${data.errors} errors`);
+  const detail = parts.length ? ' — ' + parts.join(' · ') : '';
+  el.innerHTML = `<span class="verify-dot"></span><strong>${label}</strong>${detail}<span class="verify-stage">${data.stage || ''}</span>`;
+  document.getElementById('stages').appendChild(el);
+}
+
 export function addLog(message) {
   const el = document.createElement('div');
   el.className = 'log-msg';

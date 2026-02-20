@@ -58,23 +58,35 @@ class PipelineStopped(Exception):
 MAX_REVIEW_ITERATIONS = int(os.getenv("MAX_REVIEW_ITERATIONS", "3"))
 MAX_GREEN_FIX_ATTEMPTS = int(os.getenv("MAX_GREEN_FIX_ATTEMPTS", "3"))
 MAX_SECURITY_ITERATIONS = int(os.getenv("MAX_SECURITY_ITERATIONS", "2"))
+MAX_QA_ITERATIONS = int(os.getenv("MAX_QA_ITERATIONS", "2"))
 
 # Model for the main pipeline session (PLAN → RED → GREEN → CODE REVIEW → SECURITY REVIEW)
 PIPELINE_MODEL = os.getenv("PIPELINE_MODEL") or None
 # Model for the security review stage (defaults to pipeline model)
 SECURITY_MODEL = os.getenv("SECURITY_MODEL") or None
+# Model for the QA stage (defaults to pipeline model)
+QA_MODEL = os.getenv("QA_MODEL") or None
 # Cheaper model for the report stage (formatting only)
 REPORT_MODEL = os.getenv("REPORT_MODEL", "haiku") or None
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
 
-def _load_prompt(name: str, **kwargs: str) -> str:
+def _load_prompt(name: str, target: str | None = None, **kwargs: str) -> str:
     """Load a prompt template from prompts/<name>.md and format it."""
     path = os.path.join(_PROMPTS_DIR, f"{name}.md")
     with open(path) as f:
         template = f.read()
-    return template.format(**kwargs) if kwargs else template
+    content = template.format(**kwargs) if kwargs else template
+    if target:
+        preamble = (
+            f"PROJECT DIRECTORY: {target}\n"
+            f"You are working exclusively within this directory. All file reads, writes, "
+            f"edits, searches, and shell commands MUST operate within {target} only. "
+            f"Do NOT access, scan, or create files outside of {target}.\n\n"
+        )
+        content = preamble + content
+    return content
 
 
 async def _emit(event_bus: EventBus | None, event: dict) -> None:
@@ -148,7 +160,7 @@ async def run_pipeline(
     test_monitor_hook = create_test_monitor_hook(tracker)
 
     async def protect_test_files(input_data, tool_use_id, context):
-        if current_stage not in ("GREEN", "REVIEW_GREEN", "SECURITY_GREEN"):
+        if current_stage not in ("GREEN", "REVIEW_GREEN", "SECURITY_GREEN", "QA_GREEN"):
             return {}
         file_path = input_data.get("tool_input", {}).get("file_path", "")
         if file_path and _is_test_file(file_path):
@@ -179,6 +191,40 @@ async def run_pipeline(
                         ),
                     }
                 }
+        # Block cd to absolute paths outside the target directory
+        norm_target = os.path.normpath(target)
+        for cd_match in re.finditer(r"(?:^|[;&|])\s*cd\s+(/[^\s;|&]*)", command):
+            cd_path = os.path.normpath(cd_match.group(1))
+            if not cd_path.startswith(norm_target):
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": (
+                            f"[PIPELINE GUARDRAIL] cd to {cd_path} is outside the "
+                            f"target project directory {target}. Stay within {target}."
+                        ),
+                    }
+                }
+        return {}
+
+    async def path_boundary_guardrail(input_data, tool_use_id, context):
+        file_path = input_data.get("tool_input", {}).get("file_path", "")
+        if file_path and os.path.isabs(file_path):
+            norm_target = os.path.normpath(target)
+            norm_file = os.path.normpath(file_path)
+            if not (norm_file == norm_target or norm_file.startswith(norm_target + os.sep)):
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": (
+                            f"[PIPELINE GUARDRAIL] Path {file_path} is outside the "
+                            f"target project directory {target}. All operations must "
+                            f"stay within {target}."
+                        ),
+                    }
+                }
         return {}
 
     async def pre_compact_hook(input_data, tool_use_id, context):
@@ -203,7 +249,7 @@ async def run_pipeline(
         max_turns=50,
         hooks={
             "PreToolUse": [
-                HookMatcher(matcher="Write|Edit", hooks=[protect_test_files]),
+                HookMatcher(matcher="Write|Edit", hooks=[protect_test_files, path_boundary_guardrail]),
                 HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
             ],
             "PreCompact": [
@@ -224,7 +270,7 @@ async def run_pipeline(
                 client,
                 "STAGE 1 - PLAN (resume)",
                 "Resuming from previous run — reviewing prior progress",
-                _load_prompt("plan_resume", ticket=ticket, prior_summary=prior_summary),
+                _load_prompt("plan_resume", target=target, ticket=ticket, prior_summary=prior_summary),
                 event_bus=event_bus,
             )
         else:
@@ -232,7 +278,7 @@ async def run_pipeline(
                 client,
                 "STAGE 1 - PLAN",
                 "Analyzing ticket and planning approach",
-                _load_prompt("plan", ticket=ticket),
+                _load_prompt("plan", target=target, ticket=ticket),
                 event_bus=event_bus,
             )
         pipeline_session_id = plan_result.session_id
@@ -245,7 +291,7 @@ async def run_pipeline(
             client,
             "STAGE 2 - RED",
             "Writing tests (TDD - expecting failures)",
-            _load_prompt("red", test_cmd=test_cmd),
+            _load_prompt("red", target=target, test_cmd=test_cmd),
             event_bus=event_bus,
         )
         completed_stages.append("RED")
@@ -257,7 +303,7 @@ async def run_pipeline(
             client,
             "STAGE 3 - GREEN",
             "Implementing feature/fix to make tests pass",
-            _load_prompt("green", test_cmd=test_cmd),
+            _load_prompt("green", target=target, test_cmd=test_cmd),
             event_bus=event_bus,
         )
 
@@ -274,6 +320,7 @@ async def run_pipeline(
                     "Fixing failing tests based on actual test output",
                     _load_prompt(
                         "green_fix",
+                        target=target,
                         gate_command=gate.command,
                         gate_exit_code=str(gate.exit_code),
                         gate_failures=str(gate.failures),
@@ -317,7 +364,7 @@ async def run_pipeline(
                 client,
                 f"STAGE 4 - CODE REVIEW (round {iteration}/{MAX_REVIEW_ITERATIONS})",
                 "Reviewing implementation for correctness and quality",
-                _load_prompt("review", test_status_block=test_status_block),
+                _load_prompt("review", target=target, test_status_block=test_status_block),
                 event_bus=event_bus,
             )
             review = review_result.text
@@ -343,9 +390,9 @@ async def run_pipeline(
             current_stage = "REVIEW_RED"
             await run_stage(
                 client,
-                f"STAGE 4.{iteration} - RED (fix)",
+                f"STAGE 4.{iteration} - CODE REVIEW RED",
                 "Writing tests for reviewer findings",
-                _load_prompt("review_red", test_cmd=test_cmd),
+                _load_prompt("review_red", target=target, test_cmd=test_cmd),
                 event_bus=event_bus,
             )
 
@@ -354,9 +401,9 @@ async def run_pipeline(
             _check_stop()
             await run_stage(
                 client,
-                f"STAGE 4.{iteration} - GREEN (fix)",
+                f"STAGE 4.{iteration} - CODE REVIEW GREEN",
                 "Fixing reviewer findings",
-                _load_prompt("review_green", test_cmd=test_cmd),
+                _load_prompt("review_green", target=target, test_cmd=test_cmd),
                 event_bus=event_bus,
             )
 
@@ -399,7 +446,7 @@ async def run_pipeline(
                     security_client,
                     f"STAGE 5 - SECURITY REVIEW (round {sec_iteration}/{MAX_SECURITY_ITERATIONS})",
                     "Scanning for leaked credentials, vulnerable packages, and insecure code",
-                    _load_prompt("security_review"),
+                    _load_prompt("security_review", target=target),
                     event_bus=event_bus,
                 )
             security_text = security_result.text
@@ -434,7 +481,7 @@ async def run_pipeline(
                 client,
                 f"STAGE 5.{sec_iteration} - SECURITY FIX",
                 "Fixing security issues found by the security reviewer",
-                _load_prompt("security_fix", security_issues=security_text, test_cmd=test_cmd),
+                _load_prompt("security_fix", target=target, security_issues=security_text, test_cmd=test_cmd),
                 event_bus=event_bus,
             )
 
@@ -451,12 +498,87 @@ async def run_pipeline(
 
         completed_stages.append("SECURITY_REVIEW")
 
+        # ── Stage 6 — QA loop ──
+        qa_options = ClaudeAgentOptions(
+            allowed_tools=["Read", "Glob", "Grep", "Bash"],
+            permission_mode="bypassPermissions",
+            model=QA_MODEL,
+            cwd=target,
+            max_turns=40,
+            hooks={
+                "PreToolUse": [
+                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
+                ],
+            },
+        )
+
+        for qa_iteration in range(1, MAX_QA_ITERATIONS + 1):
+            current_stage = "QA"
+            _check_stop()
+
+            async with ClaudeSDKClient(options=qa_options) as qa_client:
+                qa_result = await run_stage(
+                    qa_client,
+                    f"STAGE 6 - QA (round {qa_iteration}/{MAX_QA_ITERATIONS})",
+                    "Testing the feature end-to-end against the running application",
+                    _load_prompt("qa_review", target=target, ticket=ticket, test_cmd=test_cmd),
+                    event_bus=event_bus,
+                )
+            qa_text = qa_result.text
+
+            if "QA: APPROVED" in qa_text:
+                await _log(f"QA APPROVED on round {qa_iteration}", event_bus)
+                break
+
+            if "QA: ISSUES_FOUND" not in qa_text:
+                await _log(
+                    "QA agent did not provide a clear verdict — treating as APPROVED",
+                    event_bus,
+                )
+                break
+
+            await _log(
+                f"QA found issues on round {qa_iteration}, fixing...",
+                event_bus,
+            )
+
+            if qa_iteration == MAX_QA_ITERATIONS:
+                await _log(
+                    f"WARNING: QA issues persist after {MAX_QA_ITERATIONS} rounds — proceeding to report.",
+                    event_bus,
+                )
+                break
+
+            # Fix QA issues using the main client
+            current_stage = "QA_GREEN"
+            _check_stop()
+            await run_stage(
+                client,
+                f"STAGE 6.{qa_iteration} - QA FIX",
+                "Fixing behavioral issues found by the QA agent",
+                _load_prompt("qa_fix", target=target, qa_issues=qa_text, test_cmd=test_cmd),
+                event_bus=event_bus,
+            )
+
+            # Verify unit tests still pass after QA fix
+            qa_gate = await _verify_and_emit(
+                tracker, target, f"STAGE 6.{qa_iteration} QA fix", event_bus
+            )
+            if qa_gate.outcome != TestOutcome.PASS:
+                await _log(
+                    f"Tests failing after QA fix round {qa_iteration}: "
+                    f"{qa_gate.failures} failures, {qa_gate.errors} errors",
+                    event_bus,
+                )
+
+        completed_stages.append("QA")
+
     # ── Final verification before report ──
     current_stage = "REPORT"
     _check_stop()
     final_verify = await _verify_and_emit(tracker, target, "FINAL", event_bus)
 
-    # ── Stage 6 — REPORT (separate session, cheaper model) ──
+    # ── Stage 7 — REPORT (separate session, cheaper model) ──
     final_test_block = (
         f"FINAL TEST VERIFICATION (authoritative):\n"
         f"  Command: {final_verify.command}\n"
@@ -478,9 +600,9 @@ async def run_pipeline(
     async with ClaudeSDKClient(options=report_options) as report_client:
         report_result = await run_stage(
             report_client,
-            "STAGE 6 - REPORT",
+            "STAGE 7 - REPORT",
             "Generating final TDD report",
-            _load_prompt("report", final_test_block=final_test_block),
+            _load_prompt("report", target=target, final_test_block=final_test_block),
             event_bus=event_bus,
         )
 
