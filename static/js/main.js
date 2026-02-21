@@ -1,6 +1,6 @@
 // Entry point: init, startRun, stopPipeline, window.* bridges
 import { state } from './state.js';
-import { fetchConfig, fetchStatus, postRun, postStop } from './api.js';
+import { fetchConfig, fetchStatus, postRun, postStop, postMessage } from './api.js';
 import { connectSSE, startTimer } from './sse.js';
 import { addError } from './notifications.js';
 import { checkForSummary } from './resume.js';
@@ -52,6 +52,19 @@ async function startRun() {
   connectSSE();
 }
 
+async function sendHumanMessage() {
+  const textarea = document.getElementById('human-message');
+  const msg = textarea.value.trim();
+  if (!msg) return;
+  textarea.value = '';
+  textarea.style.height = '';
+  try {
+    await postMessage(msg);
+  } catch (err) {
+    textarea.value = msg; // restore if failed
+  }
+}
+
 // Init on page load
 async function init() {
   const config = await fetchConfig();
@@ -84,9 +97,17 @@ async function init() {
 
 init();
 
+document.getElementById('human-message').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendHumanMessage();
+  }
+});
+
 // Bridge functions to window for inline onclick attributes in HTML
 window.startRun = startRun;
 window.stopPipeline = stopPipeline;
+window.sendHumanMessage = sendHumanMessage;
 window.openDirBrowser = openDirBrowser;
 window.closeDirBrowser = closeDirBrowser;
 window.filterDirectories = filterDirectories;

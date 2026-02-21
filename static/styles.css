@@ -163,3 +163,28 @@ button.danger:disabled { background: #21262d; color: #484f58; }
 .opt-dir-actions { display: flex; gap: 8px; }
 .opt-dir-cancel { background: #21262d; color: #c9d1d9; }
 .opt-dir-cancel:hover { background: #30363d; }
+
+/* Human-in-the-loop input bar */
+body.has-human-input { padding-bottom: 90px; }
+#human-input-bar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 720px;
+  background: #161b22; border-top: 1px solid #30363d;
+  padding: 8px 20px; gap: 8px; align-items: center;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.5); z-index: 50;
+}
+#human-input-bar textarea {
+  flex: 1; height: 34px; resize: none; font-size: 13px;
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 12px; font-family: inherit; line-height: 1.4;
+}
+#human-input-bar textarea:focus { outline: none; border-color: #58a6ff; }
+#human-input-bar button { flex-shrink: 0; align-self: flex-end; }
+
+/* Human message bubble in stage feed */
+.human-msg {
+  padding: 8px 14px; font-size: 13px; color: #c9d1d9;
+  background: #1c2541; border: 1px solid #2a3f6f; border-radius: 8px;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.human-msg::before { content: 'You: '; font-weight: 600; color: #58a6ff; }

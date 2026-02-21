@@ -1,5 +1,5 @@
 // Log, error, report, stopped, and summary card rendering
-import { finalizeCurrent } from './stages.js';
+import { finalizeCurrent, scrollToBottom } from './stages.js';
 
 export function addVerifyResult(data) {
   const pass = data.outcome === 'pass';
@@ -13,6 +13,15 @@ export function addVerifyResult(data) {
   const detail = parts.length ? ' — ' + parts.join(' · ') : '';
   el.innerHTML = `<span class="verify-dot"></span><strong>${label}</strong>${detail}<span class="verify-stage">${data.stage || ''}</span>`;
   document.getElementById('stages').appendChild(el);
+  scrollToBottom();
+}
+
+export function addHumanMessage(message) {
+  const el = document.createElement('div');
+  el.className = 'human-msg';
+  el.textContent = message;
+  document.getElementById('stages').appendChild(el);
+  scrollToBottom();
 }
 
 export function addLog(message) {
@@ -20,6 +29,7 @@ export function addLog(message) {
   el.className = 'log-msg';
   el.textContent = message;
   document.getElementById('stages').appendChild(el);
+  scrollToBottom();
 }
 
 export function addError(message) {

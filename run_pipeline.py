@@ -131,6 +131,7 @@ async def run_pipeline(
     stop_event: asyncio.Event | None = None,
     prior_summary: str | None = None,
     thinking: bool = False,
+    human_queue: asyncio.Queue | None = None,
 ) -> str:
     """Run the full TDD pipeline and return the final report text."""
 
@@ -239,6 +240,25 @@ async def run_pipeline(
             }
         }
 
+    async def human_input_hook(input_data, tool_use_id, context):
+        """Inject queued operator messages into the running agent session."""
+        if not human_queue or human_queue.empty():
+            return {}
+        try:
+            msg = human_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return {}
+        await _emit(event_bus, {
+            "type": "human_input",
+            "data": {"message": msg, "stage": current_stage},
+        })
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": f"\n[OPERATOR MESSAGE]\n{msg}\n",
+            }
+        }
+
     options = ClaudeAgentOptions(
         allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         permission_mode="bypassPermissions",
@@ -256,6 +276,7 @@ async def run_pipeline(
             ],
             "PostToolUse": [
                 HookMatcher(matcher="Bash", hooks=[test_monitor_hook]),
+                HookMatcher(hooks=[human_input_hook]),
             ],
         },
     )
@@ -454,6 +475,9 @@ async def run_pipeline(
                 "PreToolUse": [
                     HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
                 ],
+                "PostToolUse": [
+                    HookMatcher(hooks=[human_input_hook]),
+                ],
             },
         )
 
@@ -529,6 +553,9 @@ async def run_pipeline(
             hooks={
                 "PreToolUse": [
                     HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
+                ],
+                "PostToolUse": [
+                    HookMatcher(hooks=[human_input_hook]),
                 ],
             },
         )

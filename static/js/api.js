@@ -46,6 +46,14 @@ export async function postMkdir(target) {
   });
 }
 
+export async function postMessage(message) {
+  return fetch('/api/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+}
+
 export async function postOptimize(ticket, target) {
   return fetch('/api/optimize', {
     method: 'POST',

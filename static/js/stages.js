@@ -1,6 +1,13 @@
 // Stage card rendering + stepper logic
 import { state } from './state.js';
 
+export function scrollToBottom() {
+  const distFromBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+  if (distFromBottom < 300) {
+    window.scrollTo({ top: document.documentElement.scrollHeight });
+  }
+}
+
 function classifyStage(name) {
   const n = name.toUpperCase();
   if (n.includes('PLAN')) return 'PLAN';
@@ -95,6 +102,7 @@ export function createStageCard(stage, description) {
   state.currentToolList = null;
   state.toolCount = 0;
   updateStepper(stage, false);
+  scrollToBottom();
 }
 
 function enqueue(fn) {
@@ -135,6 +143,7 @@ export function addTool(name, input) {
   li.title = desc;
   state.currentToolList.appendChild(li);
   state.currentToolList.scrollTop = state.currentToolList.scrollHeight;
+  scrollToBottom();
   let badge = state.currentCard.querySelector('.badge-tools');
   if (!badge) {
     const meta = state.currentCard.querySelector('.stage-meta');

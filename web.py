@@ -31,16 +31,19 @@ _bus: EventBus | None = None
 _task: asyncio.Task | None = None
 _history: list[dict] = []
 _stop_event: asyncio.Event = asyncio.Event()
+_human_queue: asyncio.Queue = asyncio.Queue()
 _ticket: str = ""
 _target: str = ""
 _optimize_task: asyncio.Task | None = None
 
 
 async def _run(ticket: str, target: str, resume: bool = False, thinking: bool = False) -> None:
-    global _status, _bus, _task, _history, _stop_event, _ticket, _target
+    global _status, _bus, _task, _history, _stop_event, _human_queue, _ticket, _target
     _history = []
     _bus = EventBus()
     _stop_event.clear()
+    while not _human_queue.empty():
+        _human_queue.get_nowait()
     _status = {"status": "running", "stage": "INIT", "started_at": time.time() * 1000}
     _ticket = ticket
     _target = target
@@ -71,6 +74,7 @@ async def _run(ticket: str, target: str, resume: bool = False, thinking: bool = 
             stop_event=_stop_event,
             prior_summary=prior_summary,
             thinking=thinking,
+            human_queue=_human_queue,
         )
         await _bus.emit({"type": "report", "data": {"text": report}})
         await _bus.emit({"type": "done", "data": {}})
@@ -303,6 +307,18 @@ async def api_optimize_submit(request: Request) -> JSONResponse:
         _optimize_task = None
 
 
+async def api_message(request: Request) -> JSONResponse:
+    """Queue a human operator message to be injected into the running agent."""
+    body = await request.json()
+    message = body.get("message", "").strip()
+    if not message:
+        return JSONResponse({"error": "message is required"}, status_code=400)
+    if _task is None or _task.done():
+        return JSONResponse({"error": "No pipeline running"}, status_code=400)
+    await _human_queue.put(message)
+    return JSONResponse({"ok": True})
+
+
 async def api_mkdir(request: Request) -> JSONResponse:
     """Create a directory (and any missing parents)."""
     body = await request.json()
@@ -363,6 +379,7 @@ app = Starlette(
         Route("/api/config", api_config),
         Route("/api/optimize", api_optimize, methods=["POST"]),
         Route("/api/optimize/submit", api_optimize_submit, methods=["POST"]),
+        Route("/api/message", api_message, methods=["POST"]),
         Route("/api/mkdir", api_mkdir, methods=["POST"]),
         Route("/api/list_dirs", api_list_dirs, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC_DIR), name="static"),

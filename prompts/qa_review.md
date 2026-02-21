@@ -27,7 +27,7 @@ Based on what you found in Step 1, invoke the feature the way a real user or cal
 - **Script**: run it directly
 
 Do NOT assume a specific framework, port, or runtime. Look at the project files to determine the correct way to run it.
-
+Do NOT do security checks
 For each test: state what you expect, run the real command, and paste the actual output verbatim.
 
 Cover:

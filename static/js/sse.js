@@ -1,7 +1,7 @@
 // SSE connection + event wiring
 import { state } from './state.js';
 import { createStageCard, addTool, addThinking, addStageText, setResult, finalizeCurrent } from './stages.js';
-import { addVerifyResult, addLog, addError, showReport, showStopped, showSummary } from './notifications.js';
+import { addVerifyResult, addLog, addError, addHumanMessage, showReport, showStopped, showSummary } from './notifications.js';
 import { checkForSummary } from './resume.js';
 
 function formatElapsed(ms) {
@@ -41,6 +41,8 @@ export function connectSSE() {
   document.getElementById('stop-btn').disabled = false;
   document.getElementById('stop-btn').textContent = 'Stop';
   document.getElementById('indicator').className = 'dot running';
+  document.getElementById('human-input-bar').style.display = 'flex';
+  document.body.classList.add('has-human-input');
 
   state.evtSource = new EventSource('/api/events');
 
@@ -74,6 +76,11 @@ export function connectSSE() {
     addVerifyResult(d);
   });
 
+  state.evtSource.addEventListener('human_input', e => {
+    const d = JSON.parse(e.data);
+    addHumanMessage(d.message);
+  });
+
   state.evtSource.addEventListener('log', e => {
     const d = JSON.parse(e.data);
     addLog(d.message);
@@ -105,6 +112,8 @@ export function connectSSE() {
     document.getElementById('indicator').className = 'dot done';
     document.getElementById('form-card').classList.remove('hidden');
     document.getElementById('stop-btn').style.display = 'none';
+    document.getElementById('human-input-bar').style.display = 'none';
+    document.body.classList.remove('has-human-input');
     btn.disabled = false;
     state.evtSource.close();
     state.evtSource = null;
