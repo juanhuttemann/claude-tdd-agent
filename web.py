@@ -9,6 +9,8 @@ import time
 
 import uvicorn
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
@@ -140,7 +142,15 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
 
 async def homepage(request: Request) -> HTMLResponse:
     with open(HTML_PATH) as f:
-        return HTMLResponse(f.read())
+        content = f.read()
+    # Inject a cache-busting version derived from the static dir mtime so that
+    # browsers always pick up updated JS modules after a server restart.
+    try:
+        v = int(os.path.getmtime(os.path.join(STATIC_DIR, "js", "main.js")))
+    except OSError:
+        v = int(time.time())
+    content = content.replace('src="/static/js/main.js"', f'src="/static/js/main.js?v={v}"')
+    return HTMLResponse(content)
 
 
 async def api_run(request: Request) -> JSONResponse:
@@ -155,6 +165,7 @@ async def api_run(request: Request) -> JSONResponse:
     if not ticket:
         return JSONResponse({"error": "ticket is required"}, status_code=400)
 
+    os.makedirs(target, exist_ok=True)
     _task = asyncio.create_task(_run(ticket, target, resume=resume))
     return JSONResponse({"ok": True})
 
@@ -241,8 +252,12 @@ async def api_optimize(request: Request) -> JSONResponse:
     if not ticket:
         return JSONResponse({"error": "ticket is required"}, status_code=400)
 
+    scan_codebase = os.path.isdir(target)
+
     try:
-        _optimize_task = asyncio.ensure_future(generate_questions(ticket, target))
+        _optimize_task = asyncio.ensure_future(
+            generate_questions(ticket, target, scan_codebase=scan_codebase)
+        )
         result = await _optimize_task
         return JSONResponse(result)
     except Exception as exc:
@@ -279,6 +294,19 @@ async def api_optimize_submit(request: Request) -> JSONResponse:
         _optimize_task = None
 
 
+async def api_mkdir(request: Request) -> JSONResponse:
+    """Create a directory (and any missing parents)."""
+    body = await request.json()
+    target = body.get("target", "").strip()
+    if not target:
+        return JSONResponse({"error": "target is required"}, status_code=400)
+    try:
+        os.makedirs(target, exist_ok=True)
+        return JSONResponse({"ok": True})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 async def api_list_dirs(request: Request) -> JSONResponse:
     """List directories at a given path (for directory browser)."""
     body = await request.json()
@@ -306,7 +334,16 @@ async def api_list_dirs(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Permission denied"}, status_code=403)
 
 
+class NoCacheJSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/js/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 app = Starlette(
+    middleware=[Middleware(NoCacheJSMiddleware)],
     routes=[
         Route("/", homepage),
         Route("/api/run", api_run, methods=["POST"]),
@@ -317,6 +354,7 @@ app = Starlette(
         Route("/api/config", api_config),
         Route("/api/optimize", api_optimize, methods=["POST"]),
         Route("/api/optimize/submit", api_optimize_submit, methods=["POST"]),
+        Route("/api/mkdir", api_mkdir, methods=["POST"]),
         Route("/api/list_dirs", api_list_dirs, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC_DIR), name="static"),
     ],

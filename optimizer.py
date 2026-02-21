@@ -22,13 +22,13 @@ def _load_prompt(name: str, **kwargs: str) -> str:
     return template.format(**kwargs) if kwargs else template
 
 
-async def _run_query(prompt: str, target: str) -> str:
+async def _run_query(prompt: str, target: str, scan_codebase: bool = True) -> str:
     """Run a one-shot read-only query and return collected text."""
     options = ClaudeAgentOptions(
-        allowed_tools=["Read", "Glob", "Grep"],
+        allowed_tools=["Read", "Glob", "Grep"] if scan_codebase else [],
         permission_mode="bypassPermissions",
         model=OPTIMIZER_MODEL,
-        cwd=target,
+        cwd=target if scan_codebase else None,
         max_turns=20,
     )
     collected: list[str] = []
@@ -71,10 +71,11 @@ def _extract_json(text: str) -> dict:
     raise ValueError(f"Could not extract JSON from agent response: {stripped[:200]}")
 
 
-async def generate_questions(ticket: str, target: str) -> dict:
-    """Analyze codebase and return {context, questions} for a vague ticket."""
-    prompt = _load_prompt("optimize_questions", ticket=ticket)
-    raw = await _run_query(prompt, target)
+async def generate_questions(ticket: str, target: str, scan_codebase: bool = True) -> dict:
+    """Analyze codebase (if present) and return {context, questions} for a vague ticket."""
+    prompt_name = "optimize_questions" if scan_codebase else "optimize_questions_no_codebase"
+    prompt = _load_prompt(prompt_name, ticket=ticket)
+    raw = await _run_query(prompt, target, scan_codebase=scan_codebase)
     return _extract_json(raw)
 
 

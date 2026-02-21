@@ -38,6 +38,14 @@ export async function postListDirs(path) {
   });
 }
 
+export async function postMkdir(target) {
+  return fetch('/api/mkdir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target }),
+  });
+}
+
 export async function postOptimize(ticket, target) {
   return fetch('/api/optimize', {
     method: 'POST',

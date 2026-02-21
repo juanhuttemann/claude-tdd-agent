@@ -20,7 +20,7 @@ export async function startOptimize() {
 
   btn.disabled = true;
   btn.textContent = 'Analyzing...';
-  panel.innerHTML = '<div class="opt-loading"><span class="spinner"></span> Scanning codebase...</div>';
+  panel.innerHTML = '<div class="opt-loading"><span class="spinner"></span> Analyzing ticket...</div>';
   panel.style.display = 'block';
 
   try {
@@ -41,6 +41,7 @@ export async function startOptimize() {
   }
 }
 
+
 function renderQuestions(data) {
   const panel = document.getElementById('optimize-panel');
   const qid = id => esc(String(id));
@@ -48,7 +49,7 @@ function renderQuestions(data) {
   let h = '';
   if (data.context) h += `<div class="opt-context">${esc(data.context)}</div>`;
 
-  for (const q of data.questions) {
+  for (const q of (data.questions || [])) {
     h += `<div class="opt-q"><div class="opt-q-text">${esc(q.question)}</div><div class="opt-opts">`;
     for (const opt of q.options) {
       h += `<label class="opt-opt"><input type="radio" name="q${qid(q.id)}" value="${esc(opt)}"><span>${esc(opt)}</span></label>`;

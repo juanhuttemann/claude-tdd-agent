@@ -143,3 +143,9 @@ button.danger:disabled { background: #21262d; color: #484f58; }
 .opt-actions button:disabled { background: #21262d; color: #484f58; }
 .opt-error { font-size: 13px; color: #f85149; margin-top: 8px; }
 .opt-ok { font-size: 13px; color: #3fb950; font-weight: 600; }
+.opt-dir-missing { font-size: 13px; }
+.opt-dir-missing-msg { color: #e6edf3; margin-bottom: 12px; }
+.opt-dir-missing-msg code { color: #79c0ff; font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; }
+.opt-dir-actions { display: flex; gap: 8px; }
+.opt-dir-cancel { background: #21262d; color: #c9d1d9; }
+.opt-dir-cancel:hover { background: #30363d; }
