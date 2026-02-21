@@ -10,11 +10,11 @@ export async function fetchStatus() {
   return res.json();
 }
 
-export async function postRun(ticket, target, resume) {
+export async function postRun(ticket, target, resume, thinking = false) {
   return fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ticket, target, resume }),
+    body: JSON.stringify({ ticket, target, resume, thinking }),
   });
 }
 

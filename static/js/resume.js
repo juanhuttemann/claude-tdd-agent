@@ -64,6 +64,22 @@ export async function checkForSummary(prefetched) {
     if (toggleBtn) {
       toggleBtn.addEventListener('click', toggleResumePreview);
     }
+
+    // Fill ticket from summary when checked; restore previous value when unchecked
+    const resumeCheck = document.getElementById('resume-check');
+    if (resumeCheck && state.cachedSummary.ticket) {
+      let savedTicket = '';
+      resumeCheck.addEventListener('change', () => {
+        const ticketEl = document.getElementById('ticket');
+        if (!ticketEl) return;
+        if (resumeCheck.checked) {
+          savedTicket = ticketEl.value;
+          ticketEl.value = state.cachedSummary.ticket;
+        } else {
+          ticketEl.value = savedTicket;
+        }
+      });
+    }
   } catch (err) {
     section.innerHTML = '';
     state.cachedSummary = null;

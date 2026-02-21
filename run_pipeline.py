@@ -47,12 +47,10 @@ class PipelineStopped(Exception):
         completed_stages: list[str],
         current_stage: str,
         tracker: TestTracker,
-        session_id: str | None = None,
     ) -> None:
         self.completed_stages = completed_stages
         self.current_stage = current_stage
         self.tracker = tracker
-        self.session_id = session_id
         super().__init__(f"Pipeline stopped during {current_stage}")
 
 MAX_REVIEW_ITERATIONS = int(os.getenv("MAX_REVIEW_ITERATIONS", "3"))
@@ -132,17 +130,17 @@ async def run_pipeline(
     event_bus: EventBus | None = None,
     stop_event: asyncio.Event | None = None,
     prior_summary: str | None = None,
+    thinking: bool = False,
 ) -> str:
     """Run the full TDD pipeline and return the final report text."""
 
     completed_stages: list[str] = []
     current_stage: str = "INIT"
-    pipeline_session_id: str | None = None
 
     def _check_stop() -> None:
         """Raise PipelineStopped if the stop event is set."""
         if stop_event and stop_event.is_set():
-            raise PipelineStopped(completed_stages, current_stage, tracker, pipeline_session_id)
+            raise PipelineStopped(completed_stages, current_stage, tracker)
 
     print_banner("INIT", "TDD Agent Pipeline")
     await _emit(event_bus, {
@@ -247,6 +245,7 @@ async def run_pipeline(
         model=PIPELINE_MODEL,
         cwd=target,
         max_turns=50,
+        **({"max_thinking_tokens": 8000} if thinking else {}),
         hooks={
             "PreToolUse": [
                 HookMatcher(matcher="Write|Edit", hooks=[protect_test_files, path_boundary_guardrail]),
@@ -281,7 +280,6 @@ async def run_pipeline(
                 _load_prompt("plan", target=target, ticket=ticket),
                 event_bus=event_bus,
             )
-        pipeline_session_id = plan_result.session_id
         completed_stages.append("PLAN")
 
         # ── Stage 2 — RED (Write Tests) ──
@@ -430,6 +428,7 @@ async def run_pipeline(
             model=SECURITY_MODEL,
             cwd=target,
             max_turns=30,
+            **({"max_thinking_tokens": 8000} if thinking else {}),
             hooks={
                 "PreToolUse": [
                     HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
@@ -505,6 +504,7 @@ async def run_pipeline(
             model=QA_MODEL,
             cwd=target,
             max_turns=40,
+            **({"max_thinking_tokens": 8000} if thinking else {}),
             hooks={
                 "PreToolUse": [
                     HookMatcher(matcher="Bash", hooks=[bash_guardrail]),

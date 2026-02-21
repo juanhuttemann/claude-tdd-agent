@@ -1,6 +1,6 @@
 // SSE connection + event wiring
 import { state } from './state.js';
-import { createStageCard, addTool, setResult, finalizeCurrent } from './stages.js';
+import { createStageCard, addTool, addThinking, addStageText, setResult, finalizeCurrent } from './stages.js';
 import { addVerifyResult, addLog, addError, showReport, showStopped, showSummary } from './notifications.js';
 import { checkForSummary } from './resume.js';
 
@@ -49,9 +49,19 @@ export function connectSSE() {
     createStageCard(d.stage, d.description);
   });
 
+  state.evtSource.addEventListener('thinking', e => {
+    const d = JSON.parse(e.data);
+    addThinking(d.text);
+  });
+
   state.evtSource.addEventListener('tool', e => {
     const d = JSON.parse(e.data);
     addTool(d.tool, d.input);
+  });
+
+  state.evtSource.addEventListener('stage_text', e => {
+    const d = JSON.parse(e.data);
+    addStageText(d.text);
   });
 
   state.evtSource.addEventListener('result', e => {

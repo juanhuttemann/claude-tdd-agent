@@ -21,18 +21,25 @@ async function stopPipeline() {
 }
 
 async function startRun() {
-  const ticket = document.getElementById('ticket').value.trim();
   const target = document.getElementById('target').value.trim();
-  if (!ticket) return;
 
   const resumeCheck = document.getElementById('resume-check');
   const resume = resumeCheck ? resumeCheck.checked : false;
+
+  let ticket = document.getElementById('ticket').value.trim();
+  if (!ticket && resume && state.cachedSummary?.ticket) {
+    ticket = state.cachedSummary.ticket;
+  }
+  if (!ticket) return;
+
+  const thinkingToggle = document.getElementById('thinking-toggle');
+  const thinking = thinkingToggle ? thinkingToggle.checked : false;
 
   document.getElementById('stages').innerHTML = '';
   document.querySelectorAll('.step').forEach(s => s.className = 'step');
   state.currentCard = null;
 
-  const res = await postRun(ticket, target, resume);
+  const res = await postRun(ticket, target, resume, thinking);
 
   if (!res.ok) {
     const err = await res.json();

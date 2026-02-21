@@ -75,11 +75,10 @@ export function createStageCard(stage, description) {
         <span class="stage-badge badge-running"><span class="spinner"></span></span>
       </span>
     </div>
-    <div class="stage-body">
-      <ul class="tool-list"></ul>
-    </div>`;
+    <div class="stage-body"></div>`;
   document.getElementById('stages').appendChild(card);
   state.currentCard = card;
+  state.currentToolList = null;
   state.toolCount = 0;
   updateStepper(stage, false);
 }
@@ -87,13 +86,22 @@ export function createStageCard(stage, description) {
 export function addTool(name, input) {
   if (!state.currentCard) return;
   state.toolCount++;
-  const list = state.currentCard.querySelector('.tool-list');
+
+  // If no tool list exists yet (tools arriving before any thinking), create one
+  if (!state.currentToolList) {
+    const body = state.currentCard.querySelector('.stage-body');
+    const list = document.createElement('ul');
+    list.className = 'tool-list';
+    body.appendChild(list);
+    state.currentToolList = list;
+  }
+
   const li = document.createElement('li');
   const desc = formatToolDescription(name, input);
   li.textContent = desc;
   li.title = desc;
-  list.appendChild(li);
-  list.scrollTop = list.scrollHeight;
+  state.currentToolList.appendChild(li);
+  state.currentToolList.scrollTop = state.currentToolList.scrollHeight;
   let badge = state.currentCard.querySelector('.badge-tools');
   if (!badge) {
     const meta = state.currentCard.querySelector('.stage-meta');
@@ -102,6 +110,65 @@ export function addTool(name, input) {
     meta.insertBefore(badge, meta.firstChild);
   }
   badge.textContent = state.toolCount + ' tool' + (state.toolCount > 1 ? 's' : '');
+}
+
+export function addThinking(text) {
+  if (!state.currentCard) return;
+
+  const body = state.currentCard.querySelector('.stage-body');
+  body.classList.add('open');
+
+  const el = document.createElement('div');
+  el.className = 'think-block';
+  el.innerHTML = `
+    <div class="think-header"><span class="think-dot"></span>reasoning</div>
+    <div class="think-body"></div>`;
+  body.appendChild(el);
+
+  // Each thinking block owns the tool list that follows it
+  const list = document.createElement('ul');
+  list.className = 'tool-list';
+  body.appendChild(list);
+  state.currentToolList = list;
+
+  const textEl = el.querySelector('.think-body');
+  const dot = el.querySelector('.think-dot');
+
+  // Blinking cursor node
+  const cursor = document.createElement('span');
+  cursor.className = 'think-cursor';
+  cursor.textContent = '▋';
+  const textNode = document.createTextNode('');
+  textEl.appendChild(textNode);
+  textEl.appendChild(cursor);
+
+  // Target ~2s total regardless of text length; minimum 1ms/char
+  const charsPerFrame = Math.max(1, Math.ceil(text.length / (2000 / 16)));
+  let typed = 0;
+
+  function frame() {
+    const end = Math.min(typed + charsPerFrame, text.length);
+    textNode.textContent = text.slice(0, end);
+    typed = end;
+    textEl.scrollTop = textEl.scrollHeight;
+    if (typed < text.length) {
+      requestAnimationFrame(frame);
+    } else {
+      cursor.remove();
+      dot.classList.add('done');
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+export function addStageText(text) {
+  if (!state.currentCard) return;
+  const body = state.currentCard.querySelector('.stage-body');
+  body.classList.add('open');
+  const el = document.createElement('div');
+  el.className = 'stage-text';
+  el.textContent = text;
+  body.appendChild(el);
 }
 
 export function setResult(turns, cost, duration) {

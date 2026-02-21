@@ -35,7 +35,6 @@ async def summarize_pipeline(
     tracker: TestTracker,
     event_history: list[dict],
     event_bus: EventBus | None = None,
-    session_id: str | None = None,
 ) -> dict:
     """Run a summarization agent and return a structured summary dict.
 
@@ -101,7 +100,6 @@ async def summarize_pipeline(
         model=SUMMARIZE_MODEL,
         cwd=target,
         max_turns=15,
-        **({"resume": session_id, "fork_session": True} if session_id else {}),
     )
 
     summary_text = ""

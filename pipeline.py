@@ -5,6 +5,7 @@ from claude_agent_sdk import (
     ClaudeSDKClient,
     ResultMessage,
     TextBlock,
+    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
@@ -45,7 +46,14 @@ async def run_stage(
     async for message in client.receive_response():
         if isinstance(message, AssistantMessage):
             for block in message.content:
-                if isinstance(block, TextBlock):
+                if isinstance(block, ThinkingBlock):
+                    print(f"  [{stage}] thinking ({len(block.thinking)} chars)")
+                    if event_bus:
+                        await event_bus.emit({
+                            "type": "thinking",
+                            "data": {"stage": stage, "text": block.thinking},
+                        })
+                elif isinstance(block, TextBlock):
                     collected_text.append(block.text)
                 elif isinstance(block, ToolUseBlock):
                     # Include tool input for better UI display
@@ -82,6 +90,12 @@ async def run_stage(
             turns = message.num_turns
             print(f"  [{stage}] turns={turns}  cost={cost}  duration={duration}ms")
             if event_bus:
+                full_text = "\n".join(collected_text).strip()
+                if full_text:
+                    await event_bus.emit({
+                        "type": "stage_text",
+                        "data": {"stage": stage, "text": full_text},
+                    })
                 await event_bus.emit({
                     "type": "result",
                     "data": {"stage": stage, "turns": turns, "cost": cost, "duration": duration},

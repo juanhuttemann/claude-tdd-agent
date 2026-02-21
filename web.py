@@ -36,7 +36,7 @@ _target: str = ""
 _optimize_task: asyncio.Task | None = None
 
 
-async def _run(ticket: str, target: str, resume: bool = False) -> None:
+async def _run(ticket: str, target: str, resume: bool = False, thinking: bool = False) -> None:
     global _status, _bus, _task, _history, _stop_event, _ticket, _target
     _history = []
     _bus = EventBus()
@@ -70,6 +70,7 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
             event_bus=_bus,
             stop_event=_stop_event,
             prior_summary=prior_summary,
+            thinking=thinking,
         )
         await _bus.emit({"type": "report", "data": {"text": report}})
         await _bus.emit({"type": "done", "data": {}})
@@ -90,7 +91,6 @@ async def _run(ticket: str, target: str, resume: bool = False) -> None:
                 tracker=stopped.tracker,
                 event_history=list(_history),
                 event_bus=_bus,
-                session_id=stopped.session_id,
             )
             await _bus.emit({"type": "summary", "data": {"summary": summary}})
         except Exception as sum_exc:
@@ -162,11 +162,12 @@ async def api_run(request: Request) -> JSONResponse:
     ticket = body.get("ticket", "").strip()
     target = body.get("target", os.getcwd()).strip()
     resume = body.get("resume", False)
+    thinking = body.get("thinking", False)
     if not ticket:
         return JSONResponse({"error": "ticket is required"}, status_code=400)
 
     os.makedirs(target, exist_ok=True)
-    _task = asyncio.create_task(_run(ticket, target, resume=resume))
+    _task = asyncio.create_task(_run(ticket, target, resume=resume, thinking=thinking))
     return JSONResponse({"ok": True})
 
 
