@@ -89,4 +89,4 @@ async def rewrite_ticket(
     prompt = _load_prompt(
         "optimize_rewrite", ticket=ticket, context=context, answers=answers_text
     )
-    return await _run_query(prompt, target)
+    return await _run_query(prompt, target, scan_codebase=os.path.isdir(target))

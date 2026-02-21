@@ -31,14 +31,22 @@ _TEST_COMMAND_PATTERNS: list[str] = [
     r"\bpytest\b",
     r"\bnpm\s+test\b",
     r"\byarn\s+test\b",
+    r"\bpnpm\s+test\b",
     r"\bgo\s+test\b",
     r"\bcargo\s+test\b",
     r"\brspec\b",
     r"\bphpunit\b",
     r"\bjest\b",
+    r"\bvitest\b",
     r"\bmocha\b",
     r"\bruby\s+-Itest\b",
     r"\bruby\s+-Ilib\b",
+    r"\bmvn\s+test\b",
+    r"\b\.?/gradlew?\s+test\b",
+    r"\bdotnet\s+test\b",
+    r"\bmix\s+test\b",
+    r"\bswift\s+test\b",
+    r"\bbundle\s+exec\s+rake\s+test\b",
 ]
 
 

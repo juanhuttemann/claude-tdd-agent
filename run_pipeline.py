@@ -153,7 +153,7 @@ async def run_pipeline(
     tracker = TestTracker()
     tracker.canonical_test_command = detect_test_command(target)
     test_cmd = tracker.canonical_test_command
-    await _log(f"Detected test command: {test_cmd}", event_bus)
+    await _log(f"Detected test command: {test_cmd or '(unknown — will re-detect after PLAN)'}", event_bus)
 
     test_monitor_hook = create_test_monitor_hook(tracker)
 
@@ -282,17 +282,38 @@ async def run_pipeline(
             )
         completed_stages.append("PLAN")
 
+        # Re-detect after PLAN in case it created project files
+        if not test_cmd:
+            test_cmd = detect_test_command(target)
+            if test_cmd:
+                tracker.canonical_test_command = test_cmd
+                await _log(f"Test command detected after PLAN: {test_cmd}", event_bus)
+
         # ── Stage 2 — RED (Write Tests) ──
         current_stage = "RED"
         _check_stop()
+        # If test command is still unknown, tell the agent to initialise the project first
+        test_cmd_hint = test_cmd or "the appropriate command for this project (initialise the project with go mod init / npm init / composer init / etc. first, then determine the test command)"
         await run_stage(
             client,
             "STAGE 2 - RED",
             "Writing tests (TDD - expecting failures)",
-            _load_prompt("red", target=target, test_cmd=test_cmd),
+            _load_prompt("red", target=target, test_cmd=test_cmd_hint, plan=plan_result.text),
             event_bus=event_bus,
         )
         completed_stages.append("RED")
+
+        # Re-detect after RED — this is when the project structure is actually created
+        if not test_cmd:
+            test_cmd = detect_test_command(target)
+            if not test_cmd:
+                raise RuntimeError(
+                    "Could not detect a test command after the RED stage. "
+                    "The agent should have initialised the project (go.mod, package.json, etc.) "
+                    "while writing tests."
+                )
+            tracker.canonical_test_command = test_cmd
+            await _log(f"Test command detected after RED: {test_cmd}", event_bus)
 
         # ── Stage 3 — GREEN (Implement) ──
         current_stage = "GREEN"
@@ -301,7 +322,7 @@ async def run_pipeline(
             client,
             "STAGE 3 - GREEN",
             "Implementing feature/fix to make tests pass",
-            _load_prompt("green", target=target, test_cmd=test_cmd),
+            _load_prompt("green", target=target, test_cmd=test_cmd, plan=plan_result.text),
             event_bus=event_bus,
         )
 

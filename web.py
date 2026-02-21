@@ -75,7 +75,7 @@ async def _run(ticket: str, target: str, resume: bool = False, thinking: bool = 
         await _bus.emit({"type": "report", "data": {"text": report}})
         await _bus.emit({"type": "done", "data": {}})
         _status.update({"status": "done", "stage": "DONE"})
-        tracker.cancel()
+        await tracker  # wait for tracker to process done before returning
 
     except PipelineStopped as stopped:
         # User requested stop — run summarization
@@ -205,6 +205,14 @@ async def api_events(request: Request) -> EventSourceResponse:
             yield {"event": event.get("type", "log"), "data": json.dumps(event.get("data", {}))}
             if event.get("type") == "done":
                 return
+
+        # History replay finished without a done event.
+        # If the pipeline is no longer running, send a synthetic done so the
+        # browser doesn't hang waiting for events that will never arrive.
+        if _status.get("status") not in ("running", "stopping"):
+            if _status.get("status") == "done":
+                yield {"event": "done", "data": "{}"}
+            return
 
         # Stream live events if pipeline is still running
         if _bus is None:

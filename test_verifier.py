@@ -75,25 +75,71 @@ async def verify_tests(
     return result
 
 
-def detect_test_command(target: str) -> str:
-    """Auto-detect the test framework based on project files."""
-    if os.path.exists(os.path.join(target, "bin", "rails")):
+def detect_test_command(target: str) -> str | None:
+    """Auto-detect the test framework based on project files.
+
+    Returns None if the project type cannot be determined yet (e.g. empty directory).
+    Callers should re-run detection after the PLAN stage creates project files.
+    """
+    def exists(*parts: str) -> bool:
+        return os.path.exists(os.path.join(target, *parts))
+
+    # Ruby / Rails
+    if exists("bin", "rails"):
         return "bin/rails test"
-    if os.path.exists(os.path.join(target, "Gemfile")) and os.path.exists(
-        os.path.join(target, "spec")
-    ):
+    if exists("Gemfile") and exists("spec"):
         return "bundle exec rspec"
-    if os.path.exists(os.path.join(target, "pytest.ini")) or os.path.exists(
-        os.path.join(target, "setup.cfg")
-    ):
+    if exists("Gemfile") and exists("test"):
+        return "bundle exec rake test"
+
+    # Python
+    if exists("pytest.ini") or exists("setup.cfg") or exists("pyproject.toml"):
         return "python -m pytest"
-    if os.path.exists(os.path.join(target, "pyproject.toml")):
+    if exists("manage.py"):                      # Django
+        return "python manage.py test"
+    if exists("setup.py") or exists("tox.ini"):
         return "python -m pytest"
-    if os.path.exists(os.path.join(target, "package.json")):
+
+    # PHP
+    if exists("vendor", "bin", "phpunit"):
+        return "vendor/bin/phpunit"
+    if exists("phpunit.xml") or exists("phpunit.xml.dist"):
+        return "vendor/bin/phpunit"
+    if exists("composer.json"):
+        return "vendor/bin/phpunit"
+
+    # JavaScript / TypeScript
+    if exists("package.json"):
+        if exists("node_modules", ".bin", "jest"):
+            return "npx jest"
+        if exists("node_modules", ".bin", "vitest"):
+            return "npx vitest run"
         return "npm test"
-    if os.path.exists(os.path.join(target, "Cargo.toml")):
-        return "cargo test"
-    if os.path.exists(os.path.join(target, "go.mod")):
+
+    # Go
+    if exists("go.mod"):
         return "go test ./..."
-    # Default fallback
-    return "bin/rails test"
+
+    # Rust
+    if exists("Cargo.toml"):
+        return "cargo test"
+
+    # Java
+    if exists("pom.xml"):
+        return "mvn test"
+    if exists("build.gradle") or exists("build.gradle.kts"):
+        return "./gradlew test"
+
+    # .NET
+    if exists("*.sln") or exists("*.csproj"):
+        return "dotnet test"
+
+    # Elixir
+    if exists("mix.exs"):
+        return "mix test"
+
+    # Swift
+    if exists("Package.swift"):
+        return "swift test"
+
+    return None

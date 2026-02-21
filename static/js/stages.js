@@ -64,6 +64,20 @@ function formatToolDescription(name, input) {
 }
 
 export function createStageCard(stage, description) {
+  // Fast-forward any running animation and flush its queued items into the
+  // outgoing card *before* switching currentCard to the new one.
+  if (state.isAnimating) {
+    state.skipAnimation = true;
+  }
+  if (state.animationQueue.length > 0) {
+    state.isAnimating = false;
+    state.skipAnimation = false;
+    const pending = state.animationQueue.splice(0);
+    for (const fn of pending) fn();
+  }
+  state.isAnimating = false;
+  state.skipAnimation = false;
+
   finalizeCurrent();
 
   const card = document.createElement('div');
@@ -83,8 +97,27 @@ export function createStageCard(stage, description) {
   updateStepper(stage, false);
 }
 
+function enqueue(fn) {
+  if (state.isAnimating) {
+    state.animationQueue.push(fn);
+    return true;
+  }
+  return false;
+}
+
+function flushQueue() {
+  state.isAnimating = false;
+  while (state.animationQueue.length > 0) {
+    const fn = state.animationQueue.shift();
+    fn();
+    // If fn started a new animation, stop flushing — it will flush the rest when done
+    if (state.isAnimating) break;
+  }
+}
+
 export function addTool(name, input) {
   if (!state.currentCard) return;
+  if (enqueue(() => addTool(name, input))) return;
   state.toolCount++;
 
   // If no tool list exists yet (tools arriving before any thinking), create one
@@ -114,7 +147,9 @@ export function addTool(name, input) {
 
 export function addThinking(text) {
   if (!state.currentCard) return;
+  if (enqueue(() => addThinking(text))) return;
 
+  state.isAnimating = true;
   const body = state.currentCard.querySelector('.stage-body');
   body.classList.add('open');
 
@@ -147,6 +182,13 @@ export function addThinking(text) {
   let typed = 0;
 
   function frame() {
+    if (state.skipAnimation) {
+      textNode.textContent = text;
+      cursor.remove();
+      dot.classList.add('done');
+      flushQueue();
+      return;
+    }
     const end = Math.min(typed + charsPerFrame, text.length);
     textNode.textContent = text.slice(0, end);
     typed = end;
@@ -156,6 +198,7 @@ export function addThinking(text) {
     } else {
       cursor.remove();
       dot.classList.add('done');
+      flushQueue();
     }
   }
   requestAnimationFrame(frame);
@@ -163,6 +206,7 @@ export function addThinking(text) {
 
 export function addStageText(text) {
   if (!state.currentCard) return;
+  if (enqueue(() => addStageText(text))) return;
   const body = state.currentCard.querySelector('.stage-body');
   body.classList.add('open');
   const el = document.createElement('div');
