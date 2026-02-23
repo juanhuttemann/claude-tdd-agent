@@ -652,4 +652,40 @@ async def run_pipeline(
 
     completed_stages.append("REPORT")
 
+    # ── Stage 8 — GIT COMMIT (only when all tests pass) ──
+    if final_verify.outcome == TestOutcome.PASS:
+        current_stage = "GIT_COMMIT"
+        _check_stop()
+        git_options = ClaudeAgentOptions(
+            allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+            permission_mode="bypassPermissions",
+            model=REPORT_MODEL,
+            cwd=target,
+            max_turns=20,
+            hooks={
+                "PreToolUse": [
+                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
+                ],
+            },
+        )
+        async with ClaudeSDKClient(options=git_options) as git_client:
+            await run_stage(
+                git_client,
+                "STAGE 8 - GIT COMMIT",
+                "Updating README and committing changes to git",
+                _load_prompt(
+                    "git_commit",
+                    target=target,
+                    ticket=ticket,
+                    plan=plan_result.text,
+                ),
+                event_bus=event_bus,
+            )
+        completed_stages.append("GIT_COMMIT")
+    else:
+        await _log(
+            "GIT COMMIT skipped — tests are not fully passing.",
+            event_bus,
+        )
+
     return report_result.text

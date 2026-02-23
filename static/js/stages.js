@@ -30,6 +30,7 @@ function classifyStage(name) {
   if (n.includes('RED')) return 'RED';
   if (n.includes('GREEN')) return 'GREEN';
   if (n.includes('REPORT')) return 'REPORT';
+  if (n.includes('GIT')) return 'GIT_COMMIT';
   return null;
 }
 
