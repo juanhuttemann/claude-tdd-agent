@@ -61,11 +61,6 @@ export function connectSSE() {
     addTool(d.tool, d.input);
   });
 
-  state.evtSource.addEventListener('stage_text', e => {
-    const d = JSON.parse(e.data);
-    addStageText(d.text);
-  });
-
   state.evtSource.addEventListener('result', e => {
     const d = JSON.parse(e.data);
     setResult(d.turns, d.cost, d.duration);
@@ -79,6 +74,11 @@ export function connectSSE() {
   state.evtSource.addEventListener('human_input', e => {
     const d = JSON.parse(e.data);
     addHumanMessage(d.message);
+  });
+
+  state.evtSource.addEventListener('agent_text', e => {
+    const d = JSON.parse(e.data);
+    addStageText(d.text);
   });
 
   state.evtSource.addEventListener('log', e => {

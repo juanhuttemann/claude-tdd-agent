@@ -316,6 +316,9 @@ async def api_message(request: Request) -> JSONResponse:
     if _task is None or _task.done():
         return JSONResponse({"error": "No pipeline running"}, status_code=400)
     await _human_queue.put(message)
+    # Show the message in the UI immediately — don't wait for the hook to fire
+    if _bus:
+        await _bus.emit({"type": "human_input", "data": {"message": message, "stage": _status.get("stage", "")}})
     return JSONResponse({"ok": True})
 
 

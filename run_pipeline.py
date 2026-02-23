@@ -241,21 +241,18 @@ async def run_pipeline(
         }
 
     async def human_input_hook(input_data, tool_use_id, context):
-        """Inject queued operator messages into the running agent session."""
+        """Block the next tool call to force the agent to re-plan around an operator message."""
         if not human_queue or human_queue.empty():
             return {}
         try:
             msg = human_queue.get_nowait()
         except asyncio.QueueEmpty:
             return {}
-        await _emit(event_bus, {
-            "type": "human_input",
-            "data": {"message": msg, "stage": current_stage},
-        })
         return {
             "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "additionalContext": f"\n[OPERATOR MESSAGE]\n{msg}\n",
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": f"[OPERATOR MESSAGE]\n{msg}\n\nAcknowledge this and adjust your approach before continuing.",
             }
         }
 
@@ -268,6 +265,7 @@ async def run_pipeline(
         **({"max_thinking_tokens": 8000} if thinking else {}),
         hooks={
             "PreToolUse": [
+                HookMatcher(hooks=[human_input_hook]),
                 HookMatcher(matcher="Write|Edit", hooks=[protect_test_files, path_boundary_guardrail]),
                 HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
             ],
@@ -276,7 +274,6 @@ async def run_pipeline(
             ],
             "PostToolUse": [
                 HookMatcher(matcher="Bash", hooks=[test_monitor_hook]),
-                HookMatcher(hooks=[human_input_hook]),
             ],
         },
     )
@@ -381,6 +378,7 @@ async def run_pipeline(
                 )
 
         # ── Stage 4 — CODE REVIEW loop ──
+        review = ""
         for iteration in range(1, MAX_REVIEW_ITERATIONS + 1):
             current_stage = "REVIEW"
             _check_stop()
@@ -473,14 +471,13 @@ async def run_pipeline(
             **({"max_thinking_tokens": 8000} if thinking else {}),
             hooks={
                 "PreToolUse": [
-                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
-                ],
-                "PostToolUse": [
                     HookMatcher(hooks=[human_input_hook]),
+                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
                 ],
             },
         )
 
+        security_text = ""
         for sec_iteration in range(1, MAX_SECURITY_ITERATIONS + 1):
             current_stage = "SECURITY_REVIEW"
             _check_stop()
@@ -552,14 +549,13 @@ async def run_pipeline(
             **({"max_thinking_tokens": 8000} if thinking else {}),
             hooks={
                 "PreToolUse": [
-                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
-                ],
-                "PostToolUse": [
                     HookMatcher(hooks=[human_input_hook]),
+                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
                 ],
             },
         )
 
+        qa_text = ""
         for qa_iteration in range(1, MAX_QA_ITERATIONS + 1):
             current_stage = "QA"
             _check_stop()

@@ -91,6 +91,17 @@ def detect_test_command(target: str) -> str | None:
         return "bundle exec rspec"
     if exists("Gemfile") and exists("test"):
         return "bundle exec rake test"
+    # Plain Ruby without bundler
+    if exists("Rakefile") and (exists("test") or exists("spec")):
+        return "rake test"
+    if exists("test"):
+        test_dir = os.path.join(target, "test")
+        if os.path.isdir(test_dir) and any(f.endswith(".rb") for f in os.listdir(test_dir)):
+            return (
+                "ruby -Ilib:test "
+                "-e \"require 'minitest/autorun'; "
+                "Dir.glob('test/**/*_test.rb').each { |f| load File.expand_path(f) }\""
+            )
 
     # Python
     if exists("pytest.ini") or exists("setup.cfg") or exists("pyproject.toml"):

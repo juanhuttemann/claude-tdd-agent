@@ -55,6 +55,11 @@ async def run_stage(
                         })
                 elif isinstance(block, TextBlock):
                     collected_text.append(block.text)
+                    if event_bus:
+                        await event_bus.emit({
+                            "type": "agent_text",
+                            "data": {"stage": stage, "text": block.text},
+                        })
                 elif isinstance(block, ToolUseBlock):
                     # Include tool input for better UI display
                     tool_input = dict(block.input) if block.input else {}
@@ -90,12 +95,6 @@ async def run_stage(
             turns = message.num_turns
             print(f"  [{stage}] turns={turns}  cost={cost}  duration={duration}ms")
             if event_bus:
-                full_text = "\n".join(collected_text).strip()
-                if full_text:
-                    await event_bus.emit({
-                        "type": "stage_text",
-                        "data": {"stage": stage, "text": full_text},
-                    })
                 await event_bus.emit({
                     "type": "result",
                     "data": {"stage": stage, "turns": turns, "cost": cost, "duration": duration},
