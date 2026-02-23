@@ -6,6 +6,7 @@ import { addError } from './notifications.js';
 import { checkForSummary } from './resume.js';
 import { openDirBrowser, closeDirBrowser, filterDirectories, setQuickPath } from './dirBrowser.js';
 import { startOptimize, submitOptimize } from './optimizer.js';
+import { clearStageCards } from './stages.js';
 
 async function stopPipeline() {
   const btn = document.getElementById('stop-btn');
@@ -37,6 +38,7 @@ async function startRun() {
 
   document.getElementById('stages').innerHTML = '';
   document.querySelectorAll('.step').forEach(s => s.className = 'step');
+  clearStageCards();
   state.currentCard = null;
 
   const res = await postRun(ticket, target, resume, thinking);

@@ -1,6 +1,19 @@
 // Stage card rendering + stepper logic
 import { state } from './state.js';
 
+const stageCards = {};
+export function clearStageCards() {
+  Object.keys(stageCards).forEach(k => delete stageCards[k]);
+}
+
+export function scrollToStage(key) {
+  const card = stageCards[key];
+  if (!card) return;
+  document.querySelectorAll('#stages .stage-card').forEach(c => c.style.display = 'none');
+  card.style.display = '';
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 export function scrollToBottom() {
   const distFromBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
   if (distFromBottom < 300) {
@@ -87,6 +100,9 @@ export function createStageCard(stage, description) {
 
   finalizeCurrent();
 
+  // Hide all existing stage cards
+  document.querySelectorAll('#stages .stage-card').forEach(c => c.style.display = 'none');
+
   const card = document.createElement('div');
   card.className = 'stage-card';
   card.innerHTML = `
@@ -98,6 +114,13 @@ export function createStageCard(stage, description) {
     </div>
     <div class="stage-body"></div>`;
   document.getElementById('stages').appendChild(card);
+
+  const key = classifyStage(stage);
+  if (key) {
+    stageCards[key] = card;
+    card.dataset.stage = key;
+  }
+
   state.currentCard = card;
   state.currentToolList = null;
   state.toolCount = 0;
@@ -242,4 +265,11 @@ document.getElementById('stages').addEventListener('click', e => {
   if (!header) return;
   const body = header.nextElementSibling;
   if (body) body.classList.toggle('open');
+});
+
+// Event delegation for stepper badge clicks
+document.getElementById('stepper').addEventListener('click', e => {
+  const step = e.target.closest('.step');
+  if (!step) return;
+  scrollToStage(step.dataset.step);
 });
