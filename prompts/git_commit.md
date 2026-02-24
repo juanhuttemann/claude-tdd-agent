@@ -14,19 +14,20 @@ Your job is to update the README, then create a clean, well-described git commit
 
 ## Steps
 
-### 1. Check git is initialized
+### 1. Ensure git is initialized
 
 ```bash
 git rev-parse --is-inside-work-tree
 ```
 
-If git is NOT initialized, output exactly:
+If git is NOT initialized, initialize it now:
 
-```
-GIT: SKIPPED — repository not initialized
+```bash
+git init
+git symbolic-ref HEAD refs/heads/main
 ```
 
-Then stop.
+Do NOT skip — always proceed.
 
 ### 2. Review what changed
 
@@ -35,7 +36,7 @@ git status
 git diff --stat HEAD 2>/dev/null || git diff --stat
 ```
 
-If there are **no changes** at all (clean working tree, nothing staged), output exactly:
+If there are **no changes** at all (clean working tree, nothing staged, and no untracked files), output exactly:
 
 ```
 GIT: SKIPPED — no changes to commit
@@ -53,15 +54,20 @@ Keep the README factual and concise. Do not add placeholder sections or TODO ite
 
 ### 4. Create a feature branch
 
-- Check the current branch:
+- Check whether any commits exist yet:
+  ```bash
+  git log --oneline -1 2>/dev/null || echo "NO_COMMITS"
+  ```
+- If the output is `NO_COMMITS` (fresh repo), skip branch creation — you will commit directly to `main` in step 6. The branch already exists as `main` from step 1.
+- If commits exist, check the current branch:
   ```bash
   git branch --show-current
   ```
-- If already on a feature branch (anything other than `main`, `master`, `develop`), keep it.
-- Otherwise, derive a short kebab-case branch name from the ticket, then create and switch:
-  ```bash
-  git checkout -b <branch-name>
-  ```
+  - If already on a feature branch (anything other than `main`, `master`, `develop`), keep it.
+  - Otherwise, derive a short kebab-case branch name from the ticket, then create and switch:
+    ```bash
+    git checkout -b <branch-name>
+    ```
   Branch naming rules:
   - Prefix with `feature/` for new features, `fix/` for bug fixes, `chore/` for maintenance
   - Lowercase letters, numbers, hyphens only — max 50 characters
