@@ -58,7 +58,7 @@ MAX_GREEN_FIX_ATTEMPTS = int(os.getenv("MAX_GREEN_FIX_ATTEMPTS", "3"))
 MAX_SECURITY_ITERATIONS = int(os.getenv("MAX_SECURITY_ITERATIONS", "2"))
 MAX_QA_ITERATIONS = int(os.getenv("MAX_QA_ITERATIONS", "2"))
 
-# Model for the main pipeline session (PLAN → RED → GREEN → CODE REVIEW → SECURITY REVIEW)
+# Model for the main pipeline session (PLAN → RED → GREEN → CODE REVIEW → QA → SECURITY REVIEW)
 PIPELINE_MODEL = os.getenv("PIPELINE_MODEL") or None
 # Model for the security review stage (defaults to pipeline model)
 SECURITY_MODEL = os.getenv("SECURITY_MODEL") or None
@@ -499,85 +499,7 @@ async def run_pipeline(
 
         completed_stages.append("REVIEW")
 
-        # ── Stage 5 — SECURITY REVIEW loop ──
-        security_options = ClaudeAgentOptions(
-            allowed_tools=["Read", "Glob", "Grep", "Bash"],
-            permission_mode="bypassPermissions",
-            model=SECURITY_MODEL,
-            cwd=target,
-            max_turns=30,
-            **({"max_thinking_tokens": 8000} if thinking else {}),
-            hooks={
-                "PreToolUse": [
-                    HookMatcher(hooks=[human_input_hook]),
-                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
-                ],
-            },
-        )
-
-        security_text = ""
-        for sec_iteration in range(1, MAX_SECURITY_ITERATIONS + 1):
-            current_stage = "SECURITY_REVIEW"
-            _check_stop()
-
-            async with ClaudeSDKClient(options=security_options) as security_client:
-                security_result = await run_stage(
-                    security_client,
-                    f"STAGE 5 - SECURITY REVIEW (round {sec_iteration}/{MAX_SECURITY_ITERATIONS})",
-                    "Scanning for leaked credentials, vulnerable packages, and insecure code",
-                    _load_prompt("security_review", target=target),
-                    event_bus=event_bus,
-                )
-            security_text = security_result.text
-
-            if "SECURITY: APPROVED" in security_text:
-                await _log(f"Security review APPROVED on round {sec_iteration}", event_bus)
-                break
-
-            if "SECURITY: ISSUES_FOUND" not in security_text:
-                await _log(
-                    "Security reviewer did not provide a clear verdict — treating as APPROVED",
-                    event_bus,
-                )
-                break
-
-            await _log(
-                f"Security reviewer found issues on round {sec_iteration}, fixing...",
-                event_bus,
-            )
-
-            if sec_iteration == MAX_SECURITY_ITERATIONS:
-                await _log(
-                    f"WARNING: Security issues persist after {MAX_SECURITY_ITERATIONS} rounds — proceeding to report.",
-                    event_bus,
-                )
-                break
-
-            # Fix security issues using the main client
-            current_stage = "SECURITY_GREEN"
-            _check_stop()
-            await run_stage(
-                client,
-                f"STAGE 5.{sec_iteration} - SECURITY FIX",
-                "Fixing security issues found by the security reviewer",
-                _load_prompt("security_fix", target=target, security_issues=security_text, test_cmd=test_cmd),
-                event_bus=event_bus,
-            )
-
-            # Verify tests still pass after security fix
-            sec_gate = await _verify_and_emit(
-                tracker, target, f"STAGE 5.{sec_iteration} security fix", event_bus
-            )
-            if sec_gate.outcome != TestOutcome.PASS:
-                await _log(
-                    f"Tests failing after security fix round {sec_iteration}: "
-                    f"{sec_gate.failures} failures, {sec_gate.errors} errors",
-                    event_bus,
-                )
-
-        completed_stages.append("SECURITY_REVIEW")
-
-        # ── Stage 6 — QA loop ──
+        # ── Stage 5 — QA loop ──
         qa_options = ClaudeAgentOptions(
             allowed_tools=["Read", "Glob", "Grep", "Bash"],
             permission_mode="bypassPermissions",
@@ -601,7 +523,7 @@ async def run_pipeline(
             async with ClaudeSDKClient(options=qa_options) as qa_client:
                 qa_result = await run_stage(
                     qa_client,
-                    f"STAGE 6 - QA (round {qa_iteration}/{MAX_QA_ITERATIONS})",
+                    f"STAGE 5 - QA (round {qa_iteration}/{MAX_QA_ITERATIONS})",
                     "Testing the feature end-to-end against the running application",
                     _load_prompt("qa_review", target=target, ticket=ticket, test_cmd=test_cmd),
                     event_bus=event_bus,
@@ -636,7 +558,7 @@ async def run_pipeline(
             _check_stop()
             await run_stage(
                 client,
-                f"STAGE 6.{qa_iteration} - QA FIX",
+                f"STAGE 5.{qa_iteration} - QA FIX",
                 "Fixing behavioral issues found by the QA agent",
                 _load_prompt("qa_fix", target=target, qa_issues=qa_text, test_cmd=test_cmd),
                 event_bus=event_bus,
@@ -644,7 +566,7 @@ async def run_pipeline(
 
             # Verify unit tests still pass after QA fix
             qa_gate = await _verify_and_emit(
-                tracker, target, f"STAGE 6.{qa_iteration} QA fix", event_bus
+                tracker, target, f"STAGE 5.{qa_iteration} QA fix", event_bus
             )
             if qa_gate.outcome != TestOutcome.PASS:
                 await _log(
@@ -654,6 +576,84 @@ async def run_pipeline(
                 )
 
         completed_stages.append("QA")
+
+        # ── Stage 6 — SECURITY REVIEW loop ──
+        security_options = ClaudeAgentOptions(
+            allowed_tools=["Read", "Glob", "Grep", "Bash"],
+            permission_mode="bypassPermissions",
+            model=SECURITY_MODEL,
+            cwd=target,
+            max_turns=30,
+            **({"max_thinking_tokens": 8000} if thinking else {}),
+            hooks={
+                "PreToolUse": [
+                    HookMatcher(hooks=[human_input_hook]),
+                    HookMatcher(matcher="Bash", hooks=[bash_guardrail]),
+                ],
+            },
+        )
+
+        security_text = ""
+        for sec_iteration in range(1, MAX_SECURITY_ITERATIONS + 1):
+            current_stage = "SECURITY_REVIEW"
+            _check_stop()
+
+            async with ClaudeSDKClient(options=security_options) as security_client:
+                security_result = await run_stage(
+                    security_client,
+                    f"STAGE 6 - SECURITY REVIEW (round {sec_iteration}/{MAX_SECURITY_ITERATIONS})",
+                    "Scanning for leaked credentials, vulnerable packages, and insecure code",
+                    _load_prompt("security_review", target=target),
+                    event_bus=event_bus,
+                )
+            security_text = security_result.text
+
+            if "SECURITY: APPROVED" in security_text:
+                await _log(f"Security review APPROVED on round {sec_iteration}", event_bus)
+                break
+
+            if "SECURITY: ISSUES_FOUND" not in security_text:
+                await _log(
+                    "Security reviewer did not provide a clear verdict — treating as APPROVED",
+                    event_bus,
+                )
+                break
+
+            await _log(
+                f"Security reviewer found issues on round {sec_iteration}, fixing...",
+                event_bus,
+            )
+
+            if sec_iteration == MAX_SECURITY_ITERATIONS:
+                await _log(
+                    f"WARNING: Security issues persist after {MAX_SECURITY_ITERATIONS} rounds — proceeding to report.",
+                    event_bus,
+                )
+                break
+
+            # Fix security issues using the main client
+            current_stage = "SECURITY_GREEN"
+            _check_stop()
+            await run_stage(
+                client,
+                f"STAGE 6.{sec_iteration} - SECURITY FIX",
+                "Fixing security issues found by the security reviewer",
+                _load_prompt("security_fix", target=target, security_issues=security_text, test_cmd=test_cmd),
+                event_bus=event_bus,
+            )
+
+            # Verify tests still pass after security fix
+            sec_gate = await _verify_and_emit(
+                tracker, target, f"STAGE 6.{sec_iteration} security fix", event_bus
+            )
+            if sec_gate.outcome != TestOutcome.PASS:
+                await _log(
+                    f"Tests failing after security fix round {sec_iteration}: "
+                    f"{sec_gate.failures} failures, {sec_gate.errors} errors",
+                    event_bus,
+                )
+
+        completed_stages.append("SECURITY_REVIEW")
 
     # ── Final verification before report ──
     current_stage = "REPORT"

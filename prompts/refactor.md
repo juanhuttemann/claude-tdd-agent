@@ -15,6 +15,7 @@ All tests are currently passing. Your job is to make the implementation cleaner 
 - Do NOT modify test files under any circumstances.
 - Do NOT change the public interface (method signatures, return types, error types) — existing tests depend on it.
 - Run `{test_cmd}` after each refactor change. If tests break, revert that change immediately and try a safer improvement.
+- **Act immediately — do NOT describe or propose changes without making them.** Either edit the file now or skip it.
 - If no improvements are needed, say so explicitly and stop.
 - Only touch files inside `{target}` that were created or modified during the RED/GREEN stages of this run. Do not touch unrelated code.
 - Report each change made and confirm the final test run passes.
