@@ -29,6 +29,7 @@ function classifyStage(name) {
   if (n.includes(' QA')) return 'QA';              // "STAGE 6 - QA" / "QA FIX"
   if (n.includes('RED')) return 'RED';
   if (n.includes('GREEN')) return 'GREEN';
+  if (n.includes('REFACTOR')) return 'REFACTOR';
   if (n.includes('REPORT')) return 'REPORT';
   if (n.includes('GIT')) return 'GIT_COMMIT';
   return null;

@@ -87,12 +87,22 @@ def create_test_monitor_hook(tracker: TestTracker):
             )
 
             if consecutive_same >= 3:
+                # Include the actual test output so the agent has the
+                # information it needs without having to re-run tests.
+                output_tail = output_text[-2000:] if output_text else "(no output)"
                 context_msg += (
-                    " WARNING: Same failure count for the last "
-                    f"{consecutive_same} consecutive runs — you appear stuck "
-                    "in a loop. STOP repeating the same fix. Re-read the "
-                    "failing test file to understand what is actually "
-                    "expected, then try a fundamentally different approach."
+                    f" WARNING: Same failure count for the last "
+                    f"{consecutive_same} consecutive runs — you are stuck in a loop.\n"
+                    "MANDATORY RECOVERY STEPS:\n"
+                    "  1. STOP. Do not run the tests again yet.\n"
+                    "  2. Use the Read tool to open the test file directly.\n"
+                    "  3. Find the exact assertion that is failing.\n"
+                    "  4. Ask yourself: what must my implementation return/do to "
+                    "satisfy that specific assertion?\n"
+                    "  5. Make only that one targeted change, then re-run.\n"
+                    "If the pipeline blocks you from editing a test file, that is "
+                    "correct — it means you must change the IMPLEMENTATION, not the test.\n"
+                    f"Last test output (for reference):\n```\n{output_tail}\n```"
                 )
 
             return {

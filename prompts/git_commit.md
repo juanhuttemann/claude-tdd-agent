@@ -48,7 +48,7 @@ Then stop.
 
 Read the existing README.md if it exists:
 - If it exists: update it to reflect the new feature/fix — add or update the relevant section (Usage, Features, API, Configuration, etc.) without removing existing content that is still accurate.
-- If it does not exist: create a minimal README.md covering: project purpose, setup, usage of the new feature, and how to run tests.
+- If it does not exist: create a minimal README.md covering: project purpose, setup, usage of the new feature, and how to run tests. Do not use Emojis, Do not include the project structure.
 
 Keep the README factual and concise. Do not add placeholder sections or TODO items.
 
@@ -97,6 +97,7 @@ Compose a commit message in this format:
 ```
 
 Allowed types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`
+DO NOT INCLUDE CO-AUTHOR
 
 Then commit:
 ```bash

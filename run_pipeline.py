@@ -75,7 +75,8 @@ def _load_prompt(name: str, target: str | None = None, **kwargs: str) -> str:
     path = os.path.join(_PROMPTS_DIR, f"{name}.md")
     with open(path) as f:
         template = f.read()
-    content = template.format(**kwargs) if kwargs else template
+    fmt = {**kwargs, "target": target} if target else kwargs
+    content = template.format(**fmt) if fmt else template
     if target:
         preamble = (
             f"PROJECT DIRECTORY: {target}\n"
@@ -377,6 +378,26 @@ async def run_pipeline(
                     event_bus,
                 )
 
+        # ── Stage 3b — REFACTOR (only when tests are green) ──
+        if gate.outcome == TestOutcome.PASS:
+            current_stage = "REFACTOR"
+            _check_stop()
+            await run_stage(
+                client,
+                "STAGE 3b - REFACTOR",
+                "Refactoring implementation (tests passing)",
+                _load_prompt("refactor", target=target, test_cmd=test_cmd),
+                event_bus=event_bus,
+            )
+            # Re-verify after refactor to catch any accidental regressions
+            gate = await _verify_and_emit(tracker, target, "STAGE 3b", event_bus)
+            if gate.outcome != TestOutcome.PASS:
+                await _log(
+                    "WARNING: Refactor broke tests — proceeding to CODE REVIEW for recovery",
+                    event_bus,
+                )
+            completed_stages.append("REFACTOR")
+
         # ── Stage 4 — CODE REVIEW loop ──
         review = ""
         for iteration in range(1, MAX_REVIEW_ITERATIONS + 1):
@@ -453,6 +474,23 @@ async def run_pipeline(
                     f"{fix_gate.failures} failures, {fix_gate.errors} errors",
                     event_bus,
                 )
+            else:
+                # REFACTOR — clean up after each passing fix cycle (R→G→R)
+                current_stage = "REFACTOR"
+                _check_stop()
+                await run_stage(
+                    client,
+                    f"STAGE 4.{iteration} - REFACTOR",
+                    "Refactoring after review fix (tests passing)",
+                    _load_prompt("refactor", target=target, test_cmd=test_cmd),
+                    event_bus=event_bus,
+                )
+                fix_gate = await _verify_and_emit(tracker, target, f"STAGE 4.{iteration} refactor", event_bus)
+                if fix_gate.outcome != TestOutcome.PASS:
+                    await _log(
+                        f"WARNING: Refactor broke tests on review round {iteration}",
+                        event_bus,
+                    )
         else:
             await _log(
                 f"Review did not approve after {MAX_REVIEW_ITERATIONS} rounds — proceeding to report.",
