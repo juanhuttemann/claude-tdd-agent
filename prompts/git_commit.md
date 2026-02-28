@@ -59,19 +59,28 @@ Keep the README factual and concise. Do not add placeholder sections or TODO ite
   git log --oneline -1 2>/dev/null || echo "NO_COMMITS"
   ```
 - If the output is `NO_COMMITS` (fresh repo), skip branch creation — you will commit directly to `main` in step 6. The branch already exists as `main` from step 1.
-- If commits exist, check the current branch:
-  ```bash
-  git branch --show-current
-  ```
-  - If already on a feature branch (anything other than `main`, `master`, `develop`), keep it.
-  - Otherwise, derive a short kebab-case branch name from the ticket, then create and switch:
+- If commits exist:
+  - Derive a short kebab-case branch name from the ticket.
+    Branch naming rules:
+    - Prefix with `feature/` for new features, `fix/` for bug fixes, `chore/` for maintenance
+    - Lowercase letters, numbers, hyphens only — max 50 characters
+    - Examples: `feature/add-user-auth`, `fix/login-redirect`
+  - Stash any uncommitted changes so you can switch branches cleanly:
     ```bash
-    git checkout -b <branch-name>
+    git stash
     ```
-  Branch naming rules:
-  - Prefix with `feature/` for new features, `fix/` for bug fixes, `chore/` for maintenance
-  - Lowercase letters, numbers, hyphens only — max 50 characters
-  - Examples: `feature/add-user-auth`, `fix/login-redirect`
+  - Return to the base branch:
+    ```bash
+    git checkout main 2>/dev/null || git checkout master 2>/dev/null || git checkout develop 2>/dev/null
+    ```
+  - Create and switch to the new feature branch (use `--force` to reset if it already exists from a prior run):
+    ```bash
+    git checkout -B <branch-name>
+    ```
+  - Restore the stashed changes:
+    ```bash
+    git stash pop
+    ```
 
 ### 5. Stage all relevant changes
 
