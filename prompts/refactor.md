@@ -10,6 +10,8 @@ git status --short
 ```
 Only refactor files that appear in that output (excluding test files). Do NOT touch unrelated pre-existing code.
 
+Scan each implementation file from the list. If the code is already clean and idiomatic, report this and stop — do not proceed to the next section.
+
 ## What to look for
 
 - **Duplication** — repeated logic that can be extracted into a shared helper

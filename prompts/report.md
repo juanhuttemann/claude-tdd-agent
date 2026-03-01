@@ -22,7 +22,9 @@ The test results above are the FINAL AUTHORITATIVE results from an independent p
 
 ---
 
-Read the test files and implementation files to fill in any details not captured above. Write a complete report with these sections:
+Use the implementation plan above to identify which files were created or modified. Read those specific files to enumerate the tests written (section 3) and implementation details (section 4). Do not read pre-existing files not mentioned in the plan.
+
+Write a complete report with these sections:
 
 1. **Ticket** — what was requested
 2. **Plan** — how it was approached

@@ -447,15 +447,21 @@ async def run_pipeline(
             await _log(f"Reviewer found issues on round {iteration}, looping back...", event_bus)
             _check_stop()
 
-            # RED — write tests for the issues found
+            # RED — write tests for the issues found (skip if all issues are purely stylistic)
             current_stage = "REVIEW_RED"
-            await run_stage(
-                client,
-                f"STAGE 4.{iteration} - CODE REVIEW RED",
-                "Writing tests for reviewer findings",
-                _load_prompt("review_red", target=target, test_cmd=test_cmd, review_issues=review),
-                event_bus=event_bus,
-            )
+            if "STYLISTIC_ONLY" in review:
+                await _log(
+                    f"Review round {iteration}: stylistic issues only — skipping REVIEW_RED",
+                    event_bus,
+                )
+            else:
+                await run_stage(
+                    client,
+                    f"STAGE 4.{iteration} - CODE REVIEW RED",
+                    "Writing tests for reviewer findings",
+                    _load_prompt("review_red", target=target, test_cmd=test_cmd, review_issues=review),
+                    event_bus=event_bus,
+                )
 
             # GREEN — fix the issues
             current_stage = "REVIEW_GREEN"

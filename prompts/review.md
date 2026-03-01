@@ -4,7 +4,7 @@ Review ALL the changes made in this pipeline run.
 
 The test results above are AUTHORITATIVE — they come from an independent test run by the pipeline, not from any previous agent output. If exit code is NOT 0, tests are FAILING and you MUST issue VERDICT: CHANGES_NEEDED regardless of any other consideration.
 
-Read every file that was created or modified — both tests and implementation — then evaluate each category below:
+Run `git status --short` to get the authoritative list of all files changed in this pipeline run. Read those files — both tests and implementation — then evaluate each category below. Do not read pre-existing files not in that list.
 
 **Correctness**
 - Does the implementation fully satisfy the ticket requirements?
@@ -34,4 +34,8 @@ Read every file that was created or modified — both tests and implementation �
 End your review with exactly one of:
   VERDICT: APPROVED
   VERDICT: CHANGES_NEEDED
+  VERDICT: CHANGES_NEEDED (STYLISTIC_ONLY)
+
+Use `STYLISTIC_ONLY` only when every single issue is purely cosmetic — naming, formatting, comments — with no behavioral impact whatsoever. This skips the test-writing phase of the fix cycle.
+
 If CHANGES_NEEDED, list each specific issue that must be fixed.
