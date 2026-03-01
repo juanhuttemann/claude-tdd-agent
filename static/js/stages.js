@@ -14,11 +14,16 @@ export function scrollToStage(key) {
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+let _scrollRaf = null;
 export function scrollToBottom() {
-  const distFromBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
-  if (distFromBottom < 300) {
-    window.scrollTo({ top: document.documentElement.scrollHeight });
-  }
+  if (_scrollRaf !== null) return;
+  _scrollRaf = requestAnimationFrame(() => {
+    _scrollRaf = null;
+    const distFromBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+    if (distFromBottom < 300) {
+      window.scrollTo({ top: document.documentElement.scrollHeight });
+    }
+  });
 }
 
 function classifyStage(name) {
@@ -130,9 +135,15 @@ export function createStageCard(stage, description) {
   scrollToBottom();
 }
 
+const QUEUE_SKIP_THRESHOLD = 15;
+
 function enqueue(fn) {
   if (state.isAnimating) {
     state.animationQueue.push(fn);
+    // Fast-forward animation if the queue is backing up
+    if (!state.skipAnimation && state.animationQueue.length > QUEUE_SKIP_THRESHOLD) {
+      state.skipAnimation = true;
+    }
     return true;
   }
   return false;

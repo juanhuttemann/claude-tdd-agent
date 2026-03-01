@@ -28,6 +28,7 @@ HTML_PATH = os.path.join(STATIC_DIR, "index.html")
 # Global state
 _status: dict = {"status": "idle", "stage": ""}
 _bus: EventBus | None = None
+_homepage_cache: tuple[str, str] | None = None  # (mtime, html)
 _task: asyncio.Task | None = None
 _history: list[dict] = []
 _stop_event: asyncio.Event = asyncio.Event()
@@ -145,16 +146,17 @@ async def _run(ticket: str, target: str, resume: bool = False, thinking: bool = 
 
 
 async def homepage(request: Request) -> HTMLResponse:
-    with open(HTML_PATH) as f:
-        content = f.read()
-    # Inject a cache-busting version derived from the static dir mtime so that
-    # browsers always pick up updated JS modules after a server restart.
+    global _homepage_cache
     try:
-        v = int(os.path.getmtime(os.path.join(STATIC_DIR, "js", "main.js")))
+        mtime = str(int(os.path.getmtime(os.path.join(STATIC_DIR, "js", "main.js"))))
     except OSError:
-        v = int(time.time())
-    content = content.replace('src="/static/js/main.js"', f'src="/static/js/main.js?v={v}"')
-    return HTMLResponse(content)
+        mtime = str(int(time.time()))
+    if _homepage_cache is None or _homepage_cache[0] != mtime:
+        with open(HTML_PATH) as f:
+            content = f.read()
+        content = content.replace('src="/static/js/main.js"', f'src="/static/js/main.js?v={mtime}"')
+        _homepage_cache = (mtime, content)
+    return HTMLResponse(_homepage_cache[1])
 
 
 async def api_run(request: Request) -> JSONResponse:

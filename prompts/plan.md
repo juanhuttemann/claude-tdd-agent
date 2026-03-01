@@ -6,9 +6,21 @@ Here is the ticket to implement:
 {ticket}
 ---
 
-Explore the codebase in the project directory above, then output a detailed implementation plan covering:
+## Step 1 — Understand the codebase
+
+Explore the project directory. Before planning anything, scan existing test files to understand:
+- Where tests live (directory structure, naming conventions)
+- What test helpers, factories, or fixtures already exist
+- What test framework and assertion style is used
+- Any shared setup (before/after hooks, database transactions, mocks)
+
+Your tests MUST follow these existing conventions exactly.
+
+## Step 2 — Output the implementation plan
+
+Covering:
 - What files to create or modify (exact paths)
-- What tests to write (file paths, function names, what each test verifies)
+- What tests to write (file paths, function names, what each test verifies — following existing conventions)
 - What implementation changes are needed and where
 - Any dependencies or setup steps required
 

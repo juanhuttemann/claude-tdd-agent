@@ -4,7 +4,7 @@ The security reviewer has identified the following security issues:
 
 Fix ALL of these security issues in the implementation files. Do NOT modify test files.
 
-Run `git diff --name-only HEAD~1 HEAD 2>/dev/null || git status --short` first to confirm which files are in scope.
+Run `git status --short` first to confirm which files are in scope.
 
 For each issue:
 - **Leaked credentials**: Remove hardcoded secrets and replace with environment variable references (e.g., `ENV['SECRET_KEY']`, `process.env.SECRET_KEY`, `os.environ['SECRET_KEY']`).

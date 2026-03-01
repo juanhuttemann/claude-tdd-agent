@@ -7,9 +7,9 @@ The feature you are testing:
 
 ## Step 1 — Understand what was built
 
-Read the changed files to understand the project type and entry points:
+List all files created or modified in this pipeline run (nothing has been committed yet):
 ```
-git diff --name-only HEAD 2>/dev/null || git status --short
+git status --short
 ```
 Read the relevant implementation files. Identify what was actually built: a library function, a CLI command, an HTTP endpoint, a background job, etc.
 

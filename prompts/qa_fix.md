@@ -4,7 +4,7 @@ The QA engineer found the following issues when testing the feature end-to-end:
 
 Fix ALL of these issues in the implementation files. Do NOT modify test files.
 
-Run `git diff --name-only HEAD~1 HEAD 2>/dev/null || git status --short` first to confirm which files are in scope.
+Run `git status --short` first to confirm which files are in scope.
 
 These are runtime/behavioral failures — the code runs but produces wrong results or crashes under real usage. Focus on:
 - Incorrect logic that produces wrong output

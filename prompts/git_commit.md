@@ -113,14 +113,32 @@ Then commit:
 git commit -m "<your message>"
 ```
 
-### 7. Confirm
+### 7. Merge to main
+
+If you committed directly to `main` in step 6 (fresh repo, no prior commits), skip this step.
+
+Otherwise, merge the feature branch back into the base branch:
 
 ```bash
-git log --oneline -3
+git checkout main 2>/dev/null || git checkout master 2>/dev/null || git checkout develop 2>/dev/null
+git merge --no-ff <branch-name> -m "Merge <branch-name>"
+```
+
+If the merge fails due to conflicts, resolve them by keeping the feature branch version for all files that were modified in this pipeline run, then complete the merge:
+
+```bash
+git add -A
+git merge --continue
+```
+
+### 8. Confirm
+
+```bash
+git log --oneline -5
 ```
 
 Output exactly:
 
 ```
-GIT: COMMITTED — branch: <branch-name> — <short-hash> <subject>
+GIT: COMMITTED — branch: <branch-name> — merged to <base-branch> — <short-hash> <subject>
 ```

@@ -453,7 +453,7 @@ async def run_pipeline(
                 client,
                 f"STAGE 4.{iteration} - CODE REVIEW RED",
                 "Writing tests for reviewer findings",
-                _load_prompt("review_red", target=target, test_cmd=test_cmd),
+                _load_prompt("review_red", target=target, test_cmd=test_cmd, review_issues=review),
                 event_bus=event_bus,
             )
 
@@ -464,7 +464,7 @@ async def run_pipeline(
                 client,
                 f"STAGE 4.{iteration} - CODE REVIEW GREEN",
                 "Fixing reviewer findings",
-                _load_prompt("review_green", target=target, test_cmd=test_cmd),
+                _load_prompt("review_green", target=target, test_cmd=test_cmd, review_issues=review),
                 event_bus=event_bus,
             )
 
@@ -520,11 +520,11 @@ async def run_pipeline(
         )
 
         qa_text = ""
-        for qa_iteration in range(1, MAX_QA_ITERATIONS + 1):
-            current_stage = "QA"
-            _check_stop()
+        async with ClaudeSDKClient(options=qa_options) as qa_client:
+            for qa_iteration in range(1, MAX_QA_ITERATIONS + 1):
+                current_stage = "QA"
+                _check_stop()
 
-            async with ClaudeSDKClient(options=qa_options) as qa_client:
                 qa_result = await run_stage(
                     qa_client,
                     f"STAGE 5 - QA (round {qa_iteration}/{MAX_QA_ITERATIONS})",
@@ -544,53 +544,53 @@ async def run_pipeline(
                     ),
                     event_bus=event_bus,
                 )
-            qa_text = qa_result.text
+                qa_text = qa_result.text
 
-            if "QA: APPROVED" in qa_text:
-                await _log(f"QA APPROVED on round {qa_iteration}", event_bus)
-                break
+                if "QA: APPROVED" in qa_text:
+                    await _log(f"QA APPROVED on round {qa_iteration}", event_bus)
+                    break
 
-            if "QA: ISSUES_FOUND" not in qa_text:
+                if "QA: ISSUES_FOUND" not in qa_text:
+                    await _log(
+                        "QA agent did not provide a clear verdict — treating as APPROVED",
+                        event_bus,
+                    )
+                    break
+
                 await _log(
-                    "QA agent did not provide a clear verdict — treating as APPROVED",
+                    f"QA found issues on round {qa_iteration}, fixing...",
                     event_bus,
                 )
-                break
 
-            await _log(
-                f"QA found issues on round {qa_iteration}, fixing...",
-                event_bus,
-            )
+                if qa_iteration == MAX_QA_ITERATIONS:
+                    await _log(
+                        f"WARNING: QA issues persist after {MAX_QA_ITERATIONS} rounds — proceeding to report.",
+                        event_bus,
+                    )
+                    break
 
-            if qa_iteration == MAX_QA_ITERATIONS:
-                await _log(
-                    f"WARNING: QA issues persist after {MAX_QA_ITERATIONS} rounds — proceeding to report.",
-                    event_bus,
+                # Fix QA issues using the main client
+                current_stage = "QA_GREEN"
+                _check_stop()
+                await run_stage(
+                    client,
+                    f"STAGE 5.{qa_iteration} - QA FIX",
+                    "Fixing behavioral issues found by the QA agent",
+                    _load_prompt("qa_fix", target=target, qa_issues=qa_text, test_cmd=test_cmd),
+                    event_bus=event_bus,
                 )
-                break
 
-            # Fix QA issues using the main client
-            current_stage = "QA_GREEN"
-            _check_stop()
-            await run_stage(
-                client,
-                f"STAGE 5.{qa_iteration} - QA FIX",
-                "Fixing behavioral issues found by the QA agent",
-                _load_prompt("qa_fix", target=target, qa_issues=qa_text, test_cmd=test_cmd),
-                event_bus=event_bus,
-            )
-
-            # Verify unit tests still pass after QA fix
-            qa_gate = await _verify_and_emit(
-                tracker, target, f"STAGE 5.{qa_iteration} QA fix", event_bus
-            )
-            last_gate = qa_gate
-            if qa_gate.outcome != TestOutcome.PASS:
-                await _log(
-                    f"Tests failing after QA fix round {qa_iteration}: "
-                    f"{qa_gate.failures} failures, {qa_gate.errors} errors",
-                    event_bus,
+                # Verify unit tests still pass after QA fix
+                qa_gate = await _verify_and_emit(
+                    tracker, target, f"STAGE 5.{qa_iteration} QA fix", event_bus
                 )
+                last_gate = qa_gate
+                if qa_gate.outcome != TestOutcome.PASS:
+                    await _log(
+                        f"Tests failing after QA fix round {qa_iteration}: "
+                        f"{qa_gate.failures} failures, {qa_gate.errors} errors",
+                        event_bus,
+                    )
 
         completed_stages.append("QA")
 
@@ -611,11 +611,11 @@ async def run_pipeline(
         )
 
         security_text = ""
-        for sec_iteration in range(1, MAX_SECURITY_ITERATIONS + 1):
-            current_stage = "SECURITY_REVIEW"
-            _check_stop()
+        async with ClaudeSDKClient(options=security_options) as security_client:
+            for sec_iteration in range(1, MAX_SECURITY_ITERATIONS + 1):
+                current_stage = "SECURITY_REVIEW"
+                _check_stop()
 
-            async with ClaudeSDKClient(options=security_options) as security_client:
                 security_result = await run_stage(
                     security_client,
                     f"STAGE 6 - SECURITY REVIEW (round {sec_iteration}/{MAX_SECURITY_ITERATIONS})",
@@ -623,53 +623,53 @@ async def run_pipeline(
                     _load_prompt("security_review", target=target),
                     event_bus=event_bus,
                 )
-            security_text = security_result.text
+                security_text = security_result.text
 
-            if "SECURITY: APPROVED" in security_text:
-                await _log(f"Security review APPROVED on round {sec_iteration}", event_bus)
-                break
+                if "SECURITY: APPROVED" in security_text:
+                    await _log(f"Security review APPROVED on round {sec_iteration}", event_bus)
+                    break
 
-            if "SECURITY: ISSUES_FOUND" not in security_text:
+                if "SECURITY: ISSUES_FOUND" not in security_text:
+                    await _log(
+                        "Security reviewer did not provide a clear verdict — treating as APPROVED",
+                        event_bus,
+                    )
+                    break
+
                 await _log(
-                    "Security reviewer did not provide a clear verdict — treating as APPROVED",
+                    f"Security reviewer found issues on round {sec_iteration}, fixing...",
                     event_bus,
                 )
-                break
 
-            await _log(
-                f"Security reviewer found issues on round {sec_iteration}, fixing...",
-                event_bus,
-            )
+                if sec_iteration == MAX_SECURITY_ITERATIONS:
+                    await _log(
+                        f"WARNING: Security issues persist after {MAX_SECURITY_ITERATIONS} rounds — proceeding to report.",
+                        event_bus,
+                    )
+                    break
 
-            if sec_iteration == MAX_SECURITY_ITERATIONS:
-                await _log(
-                    f"WARNING: Security issues persist after {MAX_SECURITY_ITERATIONS} rounds — proceeding to report.",
-                    event_bus,
+                # Fix security issues using the main client
+                current_stage = "SECURITY_GREEN"
+                _check_stop()
+                await run_stage(
+                    client,
+                    f"STAGE 6.{sec_iteration} - SECURITY FIX",
+                    "Fixing security issues found by the security reviewer",
+                    _load_prompt("security_fix", target=target, security_issues=security_text, test_cmd=test_cmd),
+                    event_bus=event_bus,
                 )
-                break
 
-            # Fix security issues using the main client
-            current_stage = "SECURITY_GREEN"
-            _check_stop()
-            await run_stage(
-                client,
-                f"STAGE 6.{sec_iteration} - SECURITY FIX",
-                "Fixing security issues found by the security reviewer",
-                _load_prompt("security_fix", target=target, security_issues=security_text, test_cmd=test_cmd),
-                event_bus=event_bus,
-            )
-
-            # Verify tests still pass after security fix
-            sec_gate = await _verify_and_emit(
-                tracker, target, f"STAGE 6.{sec_iteration} security fix", event_bus
-            )
-            last_gate = sec_gate
-            if sec_gate.outcome != TestOutcome.PASS:
-                await _log(
-                    f"Tests failing after security fix round {sec_iteration}: "
-                    f"{sec_gate.failures} failures, {sec_gate.errors} errors",
-                    event_bus,
+                # Verify tests still pass after security fix
+                sec_gate = await _verify_and_emit(
+                    tracker, target, f"STAGE 6.{sec_iteration} security fix", event_bus
                 )
+                last_gate = sec_gate
+                if sec_gate.outcome != TestOutcome.PASS:
+                    await _log(
+                        f"Tests failing after security fix round {sec_iteration}: "
+                        f"{sec_gate.failures} failures, {sec_gate.errors} errors",
+                        event_bus,
+                    )
 
         completed_stages.append("SECURITY_REVIEW")
 
@@ -703,7 +703,16 @@ async def run_pipeline(
             report_client,
             "STAGE 7 - REPORT",
             "Generating final TDD report",
-            _load_prompt("report", target=target, final_test_block=final_test_block),
+            _load_prompt(
+                "report",
+                target=target,
+                ticket=ticket,
+                plan=plan_result.text,
+                final_test_block=final_test_block,
+                review_summary=review or "(no code review iterations occurred)",
+                qa_summary=qa_text or "(no QA iterations occurred)",
+                security_summary=security_text or "(no security review iterations occurred)",
+            ),
             event_bus=event_bus,
         )
 
