@@ -14,22 +14,7 @@ Your job is to update the README, then create a clean, well-described git commit
 
 ## Steps
 
-### 1. Ensure git is initialized
-
-```bash
-git rev-parse --is-inside-work-tree
-```
-
-If git is NOT initialized, initialize it now:
-
-```bash
-git init
-git symbolic-ref HEAD refs/heads/main
-```
-
-Do NOT skip — always proceed.
-
-### 2. Review what changed
+### 1. Review what changed
 
 ```bash
 git status
@@ -44,7 +29,7 @@ GIT: SKIPPED — no changes to commit
 
 Then stop.
 
-### 3. Update or create README.md
+### 2. Update or create README.md
 
 Read the existing README.md if it exists:
 - If it exists: update it to reflect the new feature/fix — add or update the relevant section (Usage, Features, API, Configuration, etc.) without removing existing content that is still accurate.
@@ -52,13 +37,13 @@ Read the existing README.md if it exists:
 
 Keep the README factual and concise. Do not add placeholder sections or TODO items.
 
-### 4. Create a feature branch
+### 3. Create a feature branch
 
 - Check whether any commits exist yet:
   ```bash
   git log --oneline -1 2>/dev/null || echo "NO_COMMITS"
   ```
-- If the output is `NO_COMMITS` (fresh repo), skip branch creation — you will commit directly to `main` in step 6. The branch already exists as `main` from step 1.
+- If the output is `NO_COMMITS` (fresh repo), skip branch creation — you will commit directly to `main` in step 5.
 - If commits exist:
   - Derive a short kebab-case branch name from the ticket.
     Branch naming rules:
@@ -82,7 +67,7 @@ Keep the README factual and concise. Do not add placeholder sections or TODO ite
     git stash pop
     ```
 
-### 5. Stage all relevant changes
+### 4. Stage all relevant changes
 
 ```bash
 git add -A
@@ -93,7 +78,7 @@ Do NOT stage any of the following — unstage them if they were accidentally inc
 - `*.log` — log files
 - Compiled binaries or large non-source files
 
-### 6. Write and create the commit
+### 5. Write and create the commit
 
 Compose a commit message in this format:
 
@@ -113,9 +98,9 @@ Then commit:
 git commit -m "<your message>"
 ```
 
-### 7. Merge to main
+### 6. Merge to main
 
-If you committed directly to `main` in step 6 (fresh repo, no prior commits), skip this step.
+If you committed directly to `main` in step 5 (fresh repo, no prior commits), skip this step.
 
 Otherwise, merge the feature branch back into the base branch:
 
@@ -131,7 +116,7 @@ git add -A
 git merge --continue
 ```
 
-### 8. Confirm
+### 7. Confirm
 
 ```bash
 git log --oneline -5

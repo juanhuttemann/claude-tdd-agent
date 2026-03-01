@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import subprocess
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
 
@@ -150,6 +151,24 @@ async def run_pipeline(
         "data": {"ticket": ticket[:200], "target": target},
     })
     print(f"  Ticket content:\n  {ticket[:200]}{'...' if len(ticket) > 200 else ''}\n")
+
+    # --- Ensure target has a git repo with a clean baseline ---
+    # Stages use `git status --short` to scope file lists to pipeline-generated changes only.
+    if not os.path.exists(os.path.join(target, ".git")):
+        subprocess.run(["git", "init"], cwd=target, capture_output=True)
+        subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/main"], cwd=target, capture_output=True)
+        await _log("Initialized git repository in target directory", event_bus)
+
+    _is_dirty = bool(subprocess.run(
+        ["git", "status", "--porcelain"], cwd=target, capture_output=True, text=True
+    ).stdout.strip())
+    if _is_dirty:
+        subprocess.run(["git", "add", "-A"], cwd=target, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "pipeline: baseline snapshot before run"],
+            cwd=target, capture_output=True,
+        )
+        await _log("Created baseline git commit (pre-existing state captured)", event_bus)
 
     # --- Set up test tracking and hooks ---
     tracker = TestTracker()
@@ -539,7 +558,6 @@ async def run_pipeline(
                         "qa_review",
                         target=target,
                         ticket=ticket,
-                        test_cmd=test_cmd,
                         test_status_block=(
                             f"CURRENT TEST STATUS (from pipeline verification):\n"
                             f"  Command: {last_gate.command}\n"
