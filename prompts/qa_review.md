@@ -13,9 +13,10 @@ git diff --name-only HEAD 2>/dev/null || git status --short
 ```
 Read the relevant implementation files. Identify what was actually built: a library function, a CLI command, an HTTP endpoint, a background job, etc.
 
-## Step 2 — Run the test suite
+## Step 2 — Review test suite status
 
-Run `{test_cmd}` and note the results. This is your baseline.
+{test_status_block}
+This is your baseline — do not re-run the test suite.
 
 ## Step 3 — Exercise the feature directly
 

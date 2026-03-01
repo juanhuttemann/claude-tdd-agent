@@ -399,12 +399,14 @@ async def run_pipeline(
             completed_stages.append("REFACTOR")
 
         # ── Stage 4 — CODE REVIEW loop ──
+        # Carry the last gate result forward so we don't re-run tests when nothing has changed.
+        last_gate = gate
         review = ""
         for iteration in range(1, MAX_REVIEW_ITERATIONS + 1):
             current_stage = "REVIEW"
             _check_stop()
-            # Run independent verification before each review
-            verify_result = await _verify_and_emit(tracker, target, f"STAGE 4 round {iteration}", event_bus)
+            # Reuse last gate result — no code changed since the previous verification.
+            verify_result = last_gate
 
             test_status_block = (
                 f"ACTUAL TEST STATUS (from independent pipeline verification):\n"
@@ -468,6 +470,7 @@ async def run_pipeline(
 
             # Verify after each fix round
             fix_gate = await _verify_and_emit(tracker, target, f"STAGE 4.{iteration} fix", event_bus)
+            last_gate = fix_gate
             if fix_gate.outcome != TestOutcome.PASS:
                 await _log(
                     f"Tests still failing after review fix round {iteration}: "
@@ -486,6 +489,7 @@ async def run_pipeline(
                     event_bus=event_bus,
                 )
                 fix_gate = await _verify_and_emit(tracker, target, f"STAGE 4.{iteration} refactor", event_bus)
+                last_gate = fix_gate
                 if fix_gate.outcome != TestOutcome.PASS:
                     await _log(
                         f"WARNING: Refactor broke tests on review round {iteration}",
@@ -525,7 +529,19 @@ async def run_pipeline(
                     qa_client,
                     f"STAGE 5 - QA (round {qa_iteration}/{MAX_QA_ITERATIONS})",
                     "Testing the feature end-to-end against the running application",
-                    _load_prompt("qa_review", target=target, ticket=ticket, test_cmd=test_cmd),
+                    _load_prompt(
+                        "qa_review",
+                        target=target,
+                        ticket=ticket,
+                        test_cmd=test_cmd,
+                        test_status_block=(
+                            f"CURRENT TEST STATUS (from pipeline verification):\n"
+                            f"  Command: {last_gate.command}\n"
+                            f"  Outcome: {last_gate.outcome.value}\n"
+                            f"  Tests: {last_gate.total_tests}, "
+                            f"Failures: {last_gate.failures}, Errors: {last_gate.errors}\n"
+                        ),
+                    ),
                     event_bus=event_bus,
                 )
             qa_text = qa_result.text
@@ -568,6 +584,7 @@ async def run_pipeline(
             qa_gate = await _verify_and_emit(
                 tracker, target, f"STAGE 5.{qa_iteration} QA fix", event_bus
             )
+            last_gate = qa_gate
             if qa_gate.outcome != TestOutcome.PASS:
                 await _log(
                     f"Tests failing after QA fix round {qa_iteration}: "
@@ -646,6 +663,7 @@ async def run_pipeline(
             sec_gate = await _verify_and_emit(
                 tracker, target, f"STAGE 6.{sec_iteration} security fix", event_bus
             )
+            last_gate = sec_gate
             if sec_gate.outcome != TestOutcome.PASS:
                 await _log(
                     f"Tests failing after security fix round {sec_iteration}: "
@@ -655,10 +673,11 @@ async def run_pipeline(
 
         completed_stages.append("SECURITY_REVIEW")
 
-    # ── Final verification before report ──
+    # ── Final verification ──
+    # Reuse last gate result — no code changed after the last verification stage.
     current_stage = "REPORT"
     _check_stop()
-    final_verify = await _verify_and_emit(tracker, target, "FINAL", event_bus)
+    final_verify = last_gate
 
     # ── Stage 7 — REPORT (separate session, cheaper model) ──
     final_test_block = (
