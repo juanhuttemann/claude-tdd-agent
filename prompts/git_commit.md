@@ -71,9 +71,11 @@ Keep the README factual and concise. Do not add placeholder sections or TODO ite
 
 ```bash
 git add -A
+git reset HEAD .tdd_summary.json 2>/dev/null || true
 ```
 
 Do NOT stage any of the following — unstage them if they were accidentally included:
+- `.tdd_summary.json` — pipeline internal state file
 - `.env`, `.env.*`, `*.secret` — secrets / credentials
 - `*.log` — log files
 - Compiled binaries or large non-source files
@@ -113,6 +115,7 @@ If the merge fails due to conflicts, resolve them by keeping the feature branch 
 
 ```bash
 git add -A
+git reset HEAD .tdd_summary.json 2>/dev/null || true
 git merge --continue
 ```
 
